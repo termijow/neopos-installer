@@ -18,7 +18,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
-        pip install -r requirements.txt
+        pip install customtkinter
     - name: Build with PyInstaller
       run: pyinstaller --onefile --windowed --name NeoPOS-Installer main.py
     - name: Upload Artifact
@@ -39,7 +39,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
-        pip install -r requirements.txt
+        pip install customtkinter
     - name: Build with PyInstaller
       run: pyinstaller --onefile --windowed --name NeoPOS-Installer-Linux main.py
     - name: Upload Artifact
