@@ -2,6 +2,10 @@ import customtkinter as ctk
 import tkinter.messagebox as messagebox
 import sys
 import os
+import subprocess
+import threading
+import platform
+import urllib.request
 
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
@@ -91,21 +95,57 @@ class NeoPOSInstaller(ctk.CTk):
         self.progress_frame.grid(row=2, column=0, padx=20, pady=20, sticky="ew")
         self.progressbar.start()
 
+    def run_installation_task(self, target_type):
+        try:
+            # 1. Install Dependencies (Docker)
+            self.progress_label.configure(text="Verificando dependencias (Docker)...")
+            system = platform.system()
+            
+            if system == "Windows":
+                # Check if docker is installed
+                result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
+                if result.returncode != 0:
+                    self.progress_label.configure(text="Descargando Docker Desktop (esto tomará un tiempo)...")
+                    installer_path = os.path.join(os.environ["TEMP"], "DockerInstaller.exe")
+                    urllib.request.urlretrieve("https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe", installer_path)
+                    
+                    self.progress_label.configure(text="Instalando Docker Desktop...")
+                    subprocess.run([installer_path, "install", "--quiet"], check=True)
+                    self.progress_label.configure(text="Docker instalado. Por favor reinicia o abre Docker Desktop.")
+            elif system == "Linux":
+                result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
+                if result.returncode != 0:
+                    self.progress_label.configure(text="Instalando Docker...")
+                    subprocess.run(["sudo", "apt-get", "update"], check=True)
+                    subprocess.run(["sudo", "apt-get", "install", "-y", "docker.io", "docker-compose-v2"], check=True)
+
+            # 2. Deploy NeoPOS
+            self.progress_label.configure(text=f"Desplegando NeoPOS ({target_type})...")
+            
+            # Simulated deployment step - In a real scenario you would clone the repo and run start.ps1 or docker compose
+            # subprocess.run(["git", "clone", "https://github.com/your-repo/neopos-local.git"], check=True)
+            # if system == "Windows":
+            #     subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", ".\\neopos-local\\start.ps1", "--prod"])
+            # else:
+            #     subprocess.run(["docker", "compose", "-f", "neopos-local/docker-compose.yml", "up", "-d", "--build"])
+
+            # 3. Finish
+            self.after(0, self.finish_installation)
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror("Error de Instalación", f"Hubo un problema: {str(e)}"))
+            self.after(0, self.destroy)
+
     def install_app(self):
         response = messagebox.askyesno("Confirm", "Are you sure you want to install NeoPOS as a Desktop App?")
         if response:
             self.show_progress()
-            self.progress_label.configure(text="Installing Desktop App... Please wait.")
-            # Here we will add actual installation logic later
-            self.after(3000, self.finish_installation) # Simulate installation
+            threading.Thread(target=self.run_installation_task, args=("Desktop App",), daemon=True).start()
 
     def install_web(self):
         response = messagebox.askyesno("Confirm", "Are you sure you want to install NeoPOS as a Web App?")
         if response:
             self.show_progress()
-            self.progress_label.configure(text="Installing Web App... Please wait.")
-            # Here we will add actual installation logic later
-            self.after(3000, self.finish_installation) # Simulate installation
+            threading.Thread(target=self.run_installation_task, args=("Web App",), daemon=True).start()
 
     def finish_installation(self):
         self.progressbar.stop()
