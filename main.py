@@ -144,7 +144,7 @@ class NeoPOSInstaller(ctk.CTk):
             # 2. Deploy NeoPOS
             update_status("Descargando última versión de NeoPOS desde GitHub...")
             
-            repo_url = "https://github.com/TU_USUARIO/neopos-local/releases/latest/download/neopos-local.zip"
+            repo_url = "https://github.com/termijow/neopos-local/releases/download/prod/neopos-local-1.0.zip"
             install_dir = os.path.join(os.path.expanduser("~"), "NeoPOS")
             
             zip_path = os.path.join(os.environ.get("TEMP", "/tmp"), "neopos-local.zip")
@@ -166,6 +166,26 @@ class NeoPOSInstaller(ctk.CTk):
             if platform.system() == "Windows" and os.path.exists(os.path.join(install_dir, "start.ps1")):
                 self.after(0, lambda: self.append_log("[*] Ejecutando start.ps1 en Windows..."))
                 subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", os.path.join(install_dir, "start.ps1"), "--prod"])
+                
+                # Crear acceso directo en el escritorio
+                try:
+                    self.after(0, lambda: self.append_log("[*] Creando acceso directo en el escritorio..."))
+                    desktop = os.path.join(os.environ['USERPROFILE'], 'Desktop')
+                    bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
+                    vbs_path = os.path.join(install_dir, "shortcut.vbs")
+                    
+                    vbs_code = f'Set oWS = WScript.CreateObject("WScript.Shell")\n' \
+                               f'sLinkFile = "{desktop}\\\\NeoPOS.lnk"\n' \
+                               f'Set oLink = oWS.CreateShortcut(sLinkFile)\n' \
+                               f'oLink.TargetPath = "{bat_path}"\n' \
+                               f'oLink.WorkingDirectory = "{install_dir}"\n' \
+                               f'oLink.Save'
+                    
+                    with open(vbs_path, "w") as f:
+                        f.write(vbs_code)
+                    subprocess.run(["cscript", "//Nologo", vbs_path])
+                except Exception as ex:
+                    self.after(0, lambda: self.append_log(f"[-] No se pudo crear el acceso directo: {ex}"))
             elif platform.system() == "Linux" and os.path.exists(os.path.join(install_dir, "docker-compose.yml")):
                 self.after(0, lambda: self.append_log("[*] Ejecutando docker compose up en Linux..."))
                 subprocess.run(["sudo", "docker", "compose", "-f", os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--build"])
