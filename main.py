@@ -6,6 +6,7 @@ import subprocess
 import threading
 import platform
 import urllib.request
+import zipfile
 
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
@@ -83,12 +84,25 @@ class NeoPOSInstaller(ctk.CTk):
         # Progress Frame (Hidden initially)
         self.progress_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.progress_frame.grid_columnconfigure(0, weight=1)
+        self.progress_frame.grid_rowconfigure(2, weight=1)
 
-        self.progress_label = ctk.CTkLabel(self.progress_frame, text="Installing...", font=ctk.CTkFont(size=14))
-        self.progress_label.grid(row=0, column=0, pady=(20, 10))
+        self.progress_label = ctk.CTkLabel(self.progress_frame, text="Preparando...", font=ctk.CTkFont(size=14))
+        self.progress_label.grid(row=0, column=0, pady=(10, 10))
 
         self.progressbar = ctk.CTkProgressBar(self.progress_frame, mode="indeterminate")
-        self.progressbar.grid(row=1, column=0, sticky="ew", padx=40)
+        self.progressbar.grid(row=1, column=0, sticky="ew", padx=40, pady=(0, 10))
+        
+        self.log_box = ctk.CTkTextbox(self.progress_frame, height=150, font=ctk.CTkFont(size=12, family="Consolas"))
+        self.log_box.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 10))
+        self.log_box.insert("0.0", "Iniciando proceso de instalación...\n")
+        self.log_box.configure(state="disabled")
+
+    def append_log(self, text):
+        self.log_box.configure(state="normal")
+        self.log_box.insert("end", text + "\n")
+        self.log_box.see("end")
+        self.log_box.configure(state="disabled")
+        print(text)
 
     def show_progress(self):
         self.options_frame.grid_forget()
@@ -97,37 +111,66 @@ class NeoPOSInstaller(ctk.CTk):
 
     def run_installation_task(self, target_type):
         try:
+            def update_status(msg):
+                self.after(0, lambda: self.progress_label.configure(text=msg))
+                self.after(0, lambda: self.append_log(f"[*] {msg}"))
+
             # 1. Install Dependencies (Docker)
-            self.progress_label.configure(text="Verificando dependencias (Docker)...")
+            update_status("Verificando dependencias (Docker)...")
             system = platform.system()
+            self.after(0, lambda: self.append_log(f"[*] SO detectado: {system}"))
             
             if system == "Windows":
-                # Check if docker is installed
                 result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
                 if result.returncode != 0:
-                    self.progress_label.configure(text="Descargando Docker Desktop (esto tomará un tiempo)...")
+                    update_status("Descargando Docker Desktop (esto tomará unos minutos)...")
                     installer_path = os.path.join(os.environ["TEMP"], "DockerInstaller.exe")
                     urllib.request.urlretrieve("https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe", installer_path)
                     
-                    self.progress_label.configure(text="Instalando Docker Desktop...")
+                    update_status("Instalando Docker Desktop silenciosamente...")
                     subprocess.run([installer_path, "install", "--quiet"], check=True)
-                    self.progress_label.configure(text="Docker instalado. Por favor reinicia o abre Docker Desktop.")
+                    update_status("Docker instalado correctamente.")
+                else:
+                    self.after(0, lambda: self.append_log("[+] Docker ya se encuentra instalado."))
             elif system == "Linux":
                 result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
                 if result.returncode != 0:
-                    self.progress_label.configure(text="Instalando Docker...")
+                    update_status("Instalando Docker Engine mediante apt...")
                     subprocess.run(["sudo", "apt-get", "update"], check=True)
                     subprocess.run(["sudo", "apt-get", "install", "-y", "docker.io", "docker-compose-v2"], check=True)
+                else:
+                    self.after(0, lambda: self.append_log("[+] Docker ya se encuentra instalado."))
 
             # 2. Deploy NeoPOS
-            self.progress_label.configure(text=f"Desplegando NeoPOS ({target_type})...")
+            update_status("Descargando última versión de NeoPOS desde GitHub...")
             
-            # Simulated deployment step - In a real scenario you would clone the repo and run start.ps1 or docker compose
-            # subprocess.run(["git", "clone", "https://github.com/your-repo/neopos-local.git"], check=True)
-            # if system == "Windows":
-            #     subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", ".\\neopos-local\\start.ps1", "--prod"])
-            # else:
-            #     subprocess.run(["docker", "compose", "-f", "neopos-local/docker-compose.yml", "up", "-d", "--build"])
+            repo_url = "https://github.com/TU_USUARIO/neopos-local/releases/latest/download/neopos-local.zip"
+            install_dir = os.path.join(os.path.expanduser("~"), "NeoPOS")
+            
+            zip_path = os.path.join(os.environ.get("TEMP", "/tmp"), "neopos-local.zip")
+            try:
+                urllib.request.urlretrieve(repo_url, zip_path)
+                self.after(0, lambda: self.append_log(f"[+] Archivo ZIP descargado en: {zip_path}"))
+            except Exception as e:
+                self.after(0, lambda: self.append_log(f"[-] ADVERTENCIA: Falló la descarga desde GitHub.\nMotivo: {e}\n(Saltando este paso si es modo desarrollo)"))
+                os.makedirs(install_dir, exist_ok=True)
+            
+            if os.path.exists(zip_path):
+                update_status("Descomprimiendo archivos en la carpeta del usuario...")
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(install_dir)
+                self.after(0, lambda: self.append_log(f"[+] Archivos extraídos en: {install_dir}"))
+            
+            update_status(f"Iniciando servicios de backend ({target_type})...")
+            
+            if platform.system() == "Windows" and os.path.exists(os.path.join(install_dir, "start.ps1")):
+                self.after(0, lambda: self.append_log("[*] Ejecutando start.ps1 en Windows..."))
+                subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", os.path.join(install_dir, "start.ps1"), "--prod"])
+            elif platform.system() == "Linux" and os.path.exists(os.path.join(install_dir, "docker-compose.yml")):
+                self.after(0, lambda: self.append_log("[*] Ejecutando docker compose up en Linux..."))
+                subprocess.run(["sudo", "docker", "compose", "-f", os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--build"])
+            else:
+                self.after(0, lambda: self.append_log("[-] No se encontraron scripts de inicio o no coincide el SO. Revisa la carpeta NeoPOS."))
 
             # 3. Finish
             self.after(0, self.finish_installation)
