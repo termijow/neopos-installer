@@ -11,7 +11,7 @@ import zipfile
 
 
 NEOPOS_LOCAL_RELEASE_URL = (
-    "https://github.com/termijow/neopos-local/releases/latest/download/neopos-local.zip"
+    "https://github.com/termijow/neopos-installer/releases/latest/download/neopos-local.zip"
 )
 WINDOWS_AUTOSTART_TASK = "NeoPOS Local Services"
 
