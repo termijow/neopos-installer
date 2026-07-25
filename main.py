@@ -255,6 +255,64 @@ WantedBy=multi-user.target
                 return candidate
         return None
 
+    def ensure_docker_ready(self, docker_cli):
+        """Start Docker Desktop when needed and wait for a usable daemon."""
+        if platform.system() == "Windows":
+            docker_info = subprocess.run(
+                [docker_cli, "info"], capture_output=True, text=True
+            )
+            if docker_info.returncode != 0:
+                desktop_candidates = []
+                if os.environ.get("ProgramFiles"):
+                    desktop_candidates.append(
+                        os.path.join(
+                            os.environ["ProgramFiles"],
+                            "Docker",
+                            "Docker",
+                            "Docker Desktop.exe",
+                        )
+                    )
+                if os.environ.get("LOCALAPPDATA"):
+                    desktop_candidates.append(
+                        os.path.join(
+                            os.environ["LOCALAPPDATA"],
+                            "Programs",
+                            "Docker",
+                            "Docker Desktop.exe",
+                        )
+                    )
+                for desktop in desktop_candidates:
+                    if os.path.exists(desktop):
+                        self.after(0, lambda: self.append_log(
+                            "[*] Iniciando Docker Desktop y esperando al daemon..."
+                        ))
+                        subprocess.Popen(
+                            [desktop],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                        )
+                        break
+
+        for attempt in range(1, 31):
+            result = subprocess.run(
+                [docker_cli, "info"], capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                self.after(0, lambda: self.append_log("[+] Docker daemon disponible."))
+                return
+            self.after(0, lambda attempt=attempt: self.append_log(
+                f"[*] Esperando a Docker Desktop... ({attempt}/30)"
+            ))
+            time.sleep(2)
+
+        details = (result.stderr or result.stdout).strip()
+        raise RuntimeError(
+            "Docker Desktop está instalado, pero el daemon no respondió después de 60 segundos. "
+            "Verifica que WSL2/virtualización estén habilitados y vuelve a ejecutar el instalador. "
+            f"Detalle: {details}"
+        )
+
     def ask_confirmation(self, title, message):
         decision = {"confirmed": False}
         completed = threading.Event()
@@ -475,10 +533,15 @@ WantedBy=multi-user.target
                     update_status("Instalando Docker Engine mediante apt...")
                     subprocess.run(["sudo", "apt-get", "update"], check=True)
                     subprocess.run(["sudo", "apt-get", "install", "-y", "docker.io", "docker-compose-v2"], check=True)
+                    docker_cli = self.find_docker_cli()
+                    if not docker_cli:
+                        raise RuntimeError("Docker se instaló, pero no se encontró el comando docker.")
             elif docker_available:
                 self.after(0, lambda: self.append_log("[+] Docker ya se encuentra instalado."))
             else:
                 raise RuntimeError(f"Sistema operativo no soportado: {system}")
+
+            self.ensure_docker_ready(docker_cli)
 
             # 2. Deploy NeoPOS
             update_status("Descargando última versión de NeoPOS desde GitHub...")
