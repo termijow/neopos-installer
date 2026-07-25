@@ -20,12 +20,12 @@ jobs:
         pip install pyinstaller
         pip install customtkinter
     - name: Build with PyInstaller
-      run: python -m PyInstaller --onefile --windowed --name NeoPOS-Installer main.py
+      run: python -m PyInstaller --clean --onefile --windowed --name "NeoPOS-Installer-${{ github.ref_name }}" main.py
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: windows-installer
-        path: dist/NeoPOS-Installer.exe
+        path: dist/NeoPOS-Installer-${{ github.ref_name }}.exe
 
   build-linux:
     runs-on: ubuntu-latest
@@ -41,12 +41,12 @@ jobs:
         pip install pyinstaller
         pip install customtkinter
     - name: Build with PyInstaller
-      run: python -m PyInstaller --onefile --windowed --name NeoPOS-Installer-Linux main.py
+      run: python -m PyInstaller --clean --onefile --windowed --name "NeoPOS-Installer-Linux-${{ github.ref_name }}" main.py
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: linux-installer
-        path: dist/NeoPOS-Installer-Linux
+        path: dist/NeoPOS-Installer-Linux-${{ github.ref_name }}
 
   release:
     needs: [build-windows, build-linux]
@@ -63,8 +63,14 @@ jobs:
       with:
         name: linux-installer
         path: release-files/
-    - name: Extract NeoPOS compatibility manifest
-      run: unzip -p neopos-local.zip release-manifest.json > neopos-local-manifest.json
+    - name: Stamp bundled NeoPOS release version
+      env:
+        RELEASE_VERSION: ${{ github.ref_name }}
+      run: python scripts/stamp_neopos_release.py neopos-local.zip neopos-local-manifest.json
+    - name: Keep stable download aliases
+      run: |
+        cp "release-files/NeoPOS-Installer-${GITHUB_REF_NAME}.exe" release-files/NeoPOS-Installer.exe
+        cp "release-files/NeoPOS-Installer-Linux-${GITHUB_REF_NAME}" release-files/NeoPOS-Installer-Linux
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:

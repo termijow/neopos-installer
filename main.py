@@ -10,6 +10,7 @@ import platform
 import shutil
 import tempfile
 from datetime import datetime
+import urllib.error
 import urllib.request
 import webbrowser
 import zipfile
@@ -22,6 +23,10 @@ NEOPOS_LOCAL_MANIFEST_URL = (
     "https://github.com/termijow/neopos-installer/releases/latest/download/neopos-local-manifest.json"
 )
 WINDOWS_AUTOSTART_TASK = "NeoPOS Local Services"
+LOCAL_COMPOSE_SERVICES = {"api", "frontend", "postgres", "printer", "minio"}
+LOCAL_FRONTEND_URL = "http://127.0.0.1:5173"
+DOCKER_READY_TIMEOUT_SECONDS = 180
+LOCAL_SERVICES_READY_TIMEOUT_SECONDS = 180
 
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
@@ -35,7 +40,7 @@ class NeoPOSInstaller(ctk.CTk):
         self.log_path = os.path.join(tempfile.gettempdir(), "neopos-installer.log")
 
         self.title("NeoPOS Installer")
-        self.geometry("600x450")
+        self.geometry("820x500")
         self.resizable(False, False)
 
         # Layout
@@ -60,21 +65,22 @@ class NeoPOSInstaller(ctk.CTk):
         self.options_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
         self.options_frame.grid_columnconfigure(0, weight=1)
         self.options_frame.grid_columnconfigure(1, weight=1)
+        self.options_frame.grid_columnconfigure(2, weight=1)
 
-        # Install as App Button
+        # Full installation/update button
         self.app_btn = ctk.CTkButton(
             self.options_frame, 
-            text="Desktop App",
+            text="Instalar / Actualizar NeoPOS",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=80,
             command=self.install_app
         )
         self.app_btn.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
 
-        # Install as Web Button
+        # Full installation/update with web shortcut flow
         self.web_btn = ctk.CTkButton(
             self.options_frame, 
-            text="Web App (Local Server)",
+            text="Instalar y abrir Web",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=80,
             fg_color="#2b7a54",
@@ -83,10 +89,22 @@ class NeoPOSInstaller(ctk.CTk):
         )
         self.web_btn.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
+        # Start/repair an existing local installation without downloading it again.
+        self.repair_btn = ctk.CTkButton(
+            self.options_frame,
+            text="Iniciar / Reparar servicios",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            height=80,
+            fg_color="#8a5a00",
+            hover_color="#6b4600",
+            command=self.start_services,
+        )
+        self.repair_btn.grid(row=0, column=2, padx=10, pady=10, sticky="ew")
+
         # Descriptions
         self.app_desc = ctk.CTkLabel(
             self.options_frame, 
-            text="Installs backend services and a native\ndesktop application wrapper.",
+            text="Instala Docker, NeoPOS Local y\nconfigura el inicio automático.",
             text_color="gray",
             font=ctk.CTkFont(size=12)
         )
@@ -94,11 +112,19 @@ class NeoPOSInstaller(ctk.CTk):
 
         self.web_desc = ctk.CTkLabel(
             self.options_frame, 
-            text="Installs backend services and opens\nin your default web browser.",
+            text="Instala los servicios y abre\nel POS en el navegador.",
             text_color="gray",
             font=ctk.CTkFont(size=12)
         )
         self.web_desc.grid(row=1, column=1, padx=10, pady=0)
+
+        self.repair_desc = ctk.CTkLabel(
+            self.options_frame,
+            text="Usa una instalación existente y levanta\nlos contenedores sin descargarla otra vez.",
+            text_color="gray",
+            font=ctk.CTkFont(size=12),
+        )
+        self.repair_desc.grid(row=1, column=2, padx=10, pady=0)
 
         # Progress Frame (Hidden initially)
         self.progress_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -255,6 +281,26 @@ WantedBy=multi-user.target
                 return candidate
         return None
 
+    @staticmethod
+    def find_powershell():
+        """Resolve Windows PowerShell even when the installer has a stale PATH."""
+        candidates = [shutil.which("powershell.exe"), shutil.which("powershell")]
+        system_root = os.environ.get("SystemRoot")
+        if system_root:
+            candidates.append(
+                os.path.join(
+                    system_root,
+                    "System32",
+                    "WindowsPowerShell",
+                    "v1.0",
+                    "powershell.exe",
+                )
+            )
+        for candidate in candidates:
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        return None
+
     def ensure_docker_ready(self, docker_cli):
         """Start Docker Desktop when needed and wait for a usable daemon."""
         if platform.system() == "Windows":
@@ -294,7 +340,8 @@ WantedBy=multi-user.target
                         )
                         break
 
-        for attempt in range(1, 31):
+        attempts = max(1, DOCKER_READY_TIMEOUT_SECONDS // 2)
+        for attempt in range(1, attempts + 1):
             result = subprocess.run(
                 [docker_cli, "info"], capture_output=True, text=True
             )
@@ -302,15 +349,105 @@ WantedBy=multi-user.target
                 self.after(0, lambda: self.append_log("[+] Docker daemon disponible."))
                 return
             self.after(0, lambda attempt=attempt: self.append_log(
-                f"[*] Esperando a Docker Desktop... ({attempt}/30)"
+                f"[*] Esperando a Docker Desktop... ({attempt}/{attempts})"
             ))
             time.sleep(2)
 
         details = (result.stderr or result.stdout).strip()
         raise RuntimeError(
-            "Docker Desktop está instalado, pero el daemon no respondió después de 60 segundos. "
+            f"Docker Desktop está instalado, pero el daemon no respondió después de "
+            f"{DOCKER_READY_TIMEOUT_SECONDS} segundos. "
             "Verifica que WSL2/virtualización estén habilitados y vuelve a ejecutar el instalador. "
             f"Detalle: {details}"
+        )
+
+    @staticmethod
+    def _trim_process_output(value, limit=12000):
+        value = (value or "").strip()
+        if len(value) <= limit:
+            return value
+        return "...\n" + value[-limit:]
+
+    def wait_for_local_services(self, docker_cli, compose_file):
+        """Wait until Compose reports every local service running and the UI answers."""
+        compose = [
+            docker_cli,
+            "compose",
+            "-p",
+            "neopos-local",
+            "-f",
+            compose_file,
+        ]
+        deadline = time.monotonic() + LOCAL_SERVICES_READY_TIMEOUT_SECONDS
+        last_details = ""
+
+        while time.monotonic() < deadline:
+            status = subprocess.run(
+                compose + ["ps", "--services", "--status", "running"],
+                cwd=os.path.dirname(compose_file),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            running_services = {
+                line.strip()
+                for line in status.stdout.splitlines()
+                if line.strip()
+            }
+            missing = LOCAL_COMPOSE_SERVICES - running_services
+            last_details = self._trim_process_output(status.stderr or status.stdout)
+
+            frontend_ready = False
+            if not missing:
+                try:
+                    with urllib.request.urlopen(LOCAL_FRONTEND_URL, timeout=5) as response:
+                        frontend_ready = 200 <= response.status < 500
+                except (OSError, urllib.error.URLError):
+                    frontend_ready = False
+
+            if status.returncode == 0 and not missing and frontend_ready:
+                self.after(0, lambda: self.append_log(
+                    "[+] NeoPOS Local está disponible: todos los servicios están activos "
+                    "y el frontend responde en http://localhost:5173."
+                ))
+                return
+
+            elapsed = LOCAL_SERVICES_READY_TIMEOUT_SECONDS - max(
+                0, int(deadline - time.monotonic())
+            )
+            if elapsed == 0 or elapsed % 10 == 0:
+                missing_text = ", ".join(sorted(missing)) or "frontend aún no responde"
+                self.after(0, lambda missing_text=missing_text: self.append_log(
+                    f"[*] Esperando servicios NeoPOS Local ({missing_text})..."
+                ))
+            time.sleep(2)
+
+        diagnostics = subprocess.run(
+            compose + ["ps", "-a"],
+            cwd=os.path.dirname(compose_file),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        logs = subprocess.run(
+            compose + ["logs", "--tail", "80"],
+            cwd=os.path.dirname(compose_file),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        diagnostic_text = self._trim_process_output(
+            diagnostics.stdout or diagnostics.stderr
+        )
+        log_text = self._trim_process_output(logs.stdout or logs.stderr)
+        raise RuntimeError(
+            "Docker Compose terminó, pero NeoPOS Local no quedó listo después de "
+            f"{LOCAL_SERVICES_READY_TIMEOUT_SECONDS} segundos.\n\n"
+            f"Estado de contenedores:\n{diagnostic_text or last_details or 'sin salida'}\n\n"
+            f"Últimos logs:\n{log_text or 'sin salida'}"
         )
 
     def ask_confirmation(self, title, message):
@@ -577,10 +714,53 @@ WantedBy=multi-user.target
             
             if platform.system() == "Windows" and os.path.exists(os.path.join(install_dir, "start.ps1")):
                 self.after(0, lambda: self.append_log("[*] Ejecutando start.ps1 en Windows..."))
-                subprocess.run([
-                    "powershell", "-ExecutionPolicy", "Bypass", "-File",
-                    os.path.join(install_dir, "start.ps1"), "--prod", "--no-logs",
-                ], check=True)
+                powershell = self.find_powershell()
+                if not powershell:
+                    raise RuntimeError(
+                        "No se encontró Windows PowerShell para iniciar NeoPOS Local."
+                    )
+
+                process_env = os.environ.copy()
+                docker_directory = os.path.dirname(docker_cli)
+                process_env["PATH"] = os.pathsep.join(
+                    [docker_directory, process_env.get("PATH", "")]
+                )
+                start_result = subprocess.run(
+                    [
+                        powershell,
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        os.path.join(install_dir, "start.ps1"),
+                        "--local",
+                        "--prod",
+                        "--no-logs",
+                    ],
+                    cwd=install_dir,
+                    env=process_env,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                start_output = self._trim_process_output(
+                    "\n".join(filter(None, [start_result.stdout, start_result.stderr]))
+                )
+                if start_output:
+                    self.after(0, lambda output=start_output: self.append_log(output))
+                if start_result.returncode != 0:
+                    raise RuntimeError(
+                        "start.ps1 no pudo iniciar NeoPOS Local "
+                        f"(código {start_result.returncode}).\n\n"
+                        f"Salida:\n{start_output or 'sin salida'}"
+                    )
+
+                self.wait_for_local_services(
+                    docker_cli,
+                    os.path.join(install_dir, "docker-compose.yml"),
+                )
 
                 self.after(0, lambda: self.append_log("[*] Configurando recuperación automática de servicios..."))
                 self.register_windows_autostart(install_dir)
@@ -627,16 +807,116 @@ WantedBy=multi-user.target
             self.after(0, self.destroy)
 
     def install_app(self):
-        response = messagebox.askyesno("Confirm", "Are you sure you want to install NeoPOS as a Desktop App?")
+        response = messagebox.askyesno(
+            "Instalar NeoPOS",
+            "Se instalarán o actualizarán Docker y todos los servicios de NeoPOS Local. ¿Continuar?",
+        )
         if response:
             self.show_progress()
             threading.Thread(target=self.run_installation_task, args=("Desktop App",), daemon=True).start()
 
     def install_web(self):
-        response = messagebox.askyesno("Confirm", "Are you sure you want to install NeoPOS as a Web App?")
+        response = messagebox.askyesno(
+            "Instalar NeoPOS",
+            "Se instalarán o actualizarán Docker y todos los servicios de NeoPOS Local. ¿Continuar?",
+        )
         if response:
             self.show_progress()
             threading.Thread(target=self.run_installation_task, args=("Web App",), daemon=True).start()
+
+    def start_services(self):
+        response = messagebox.askyesno(
+            "Iniciar NeoPOS",
+            "Se usarán los archivos existentes en la carpeta NeoPOS y se levantarán "
+            "los servicios en modo producción. ¿Continuar?",
+        )
+        if response:
+            self.show_progress()
+            threading.Thread(target=self.run_services_task, daemon=True).start()
+
+    def run_services_task(self):
+        """Start or repair an already downloaded NeoPOS installation."""
+        try:
+            def update_status(msg):
+                self.after(0, lambda: self.progress_label.configure(text=msg))
+                self.after(0, lambda: self.append_log(f"[*] {msg}"))
+
+            install_dir = os.path.join(os.path.expanduser("~"), "NeoPOS")
+            start_script = os.path.join(install_dir, "start.ps1")
+            compose_file = os.path.join(install_dir, "docker-compose.yml")
+            if not os.path.exists(start_script) or not os.path.exists(compose_file):
+                raise RuntimeError(
+                    f"No se encontró una instalación completa en {install_dir}. "
+                    "Usa primero el botón Instalar / Actualizar NeoPOS."
+                )
+
+            update_status(f"Verificando instalación existente en {install_dir}...")
+            self.verify_windows_virtualization()
+            docker_cli = self.find_docker_cli()
+            if not docker_cli:
+                raise RuntimeError("No se encontró Docker. Usa primero el botón de instalación.")
+            self.ensure_docker_ready(docker_cli)
+
+            if platform.system() == "Windows":
+                powershell = self.find_powershell()
+                if not powershell:
+                    raise RuntimeError("No se encontró Windows PowerShell para iniciar NeoPOS Local.")
+                update_status("Construyendo e iniciando los servicios locales...")
+                process_env = os.environ.copy()
+                process_env["PATH"] = os.pathsep.join(
+                    [os.path.dirname(docker_cli), process_env.get("PATH", "")]
+                )
+                result = subprocess.run(
+                    [
+                        powershell,
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        start_script,
+                        "--local",
+                        "--prod",
+                        "--no-logs",
+                    ],
+                    cwd=install_dir,
+                    env=process_env,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                output = self._trim_process_output(
+                    "\n".join(filter(None, [result.stdout, result.stderr]))
+                )
+                if output:
+                    self.after(0, lambda value=output: self.append_log(value))
+                if result.returncode != 0:
+                    raise RuntimeError(
+                        f"start.ps1 no pudo iniciar NeoPOS Local (código {result.returncode}).\n\n"
+                        f"Salida:\n{output or 'sin salida'}"
+                    )
+                self.wait_for_local_services(docker_cli, compose_file)
+                self.register_windows_autostart(install_dir)
+            elif platform.system() == "Linux":
+                update_status("Construyendo e iniciando los servicios locales...")
+                subprocess.run(
+                    [
+                        "sudo", "docker", "compose", "-p", "neopos-local", "-f", compose_file,
+                        "up", "-d", "--build", "--remove-orphans",
+                    ],
+                    check=True,
+                )
+                self.register_linux_autostart(install_dir)
+            else:
+                raise RuntimeError(f"Sistema operativo no soportado: {platform.system()}")
+
+            self.after(0, self.finish_installation)
+        except Exception as error:
+            self.after(0, lambda message=str(error): messagebox.showerror(
+                "Error al iniciar NeoPOS",
+                f"No se pudieron iniciar los servicios: {message}\n\nLog: {self.log_path}",
+            ))
 
     def finish_installation(self):
         self.progressbar.stop()
