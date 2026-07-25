@@ -18,6 +18,9 @@ import zipfile
 NEOPOS_LOCAL_RELEASE_URL = (
     "https://github.com/termijow/neopos-installer/releases/latest/download/neopos-local.zip"
 )
+NEOPOS_LOCAL_MANIFEST_URL = (
+    "https://github.com/termijow/neopos-installer/releases/latest/download/neopos-local-manifest.json"
+)
 WINDOWS_AUTOSTART_TASK = "NeoPOS Local Services"
 
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
@@ -28,6 +31,7 @@ class NeoPOSInstaller(ctk.CTk):
         super().__init__()
 
         self.install_dir = None
+        self.confirmed_breaking_version = None
         self.log_path = os.path.join(tempfile.gettempdir(), "neopos-installer.log")
 
         self.title("NeoPOS Installer")
@@ -287,6 +291,58 @@ WantedBy=multi-user.target
         except (OSError, json.JSONDecodeError):
             return None
 
+    def check_update_before_download(self, install_dir):
+        """Check the public release manifest before downloading the full package."""
+        existing_compose = os.path.join(install_dir, "docker-compose.yml")
+        if not os.path.exists(existing_compose):
+            return
+
+        current_manifest = self.read_installed_manifest(install_dir) or {
+            "app_version": "legacy",
+            "database_migration": "unknown",
+        }
+        current_version = current_manifest.get("app_version", "legacy")
+        self.after(0, lambda: self.append_log(
+            "[*] Verificando compatibilidad de la actualización antes de descargarla..."
+        ))
+
+        try:
+            with urllib.request.urlopen(NEOPOS_LOCAL_MANIFEST_URL, timeout=30) as response:
+                remote_manifest = json.loads(response.read().decode("utf-8"))
+            if not isinstance(remote_manifest, dict):
+                raise ValueError("el manifiesto remoto no tiene un objeto JSON válido")
+        except Exception as error:
+            raise RuntimeError(
+                "No se pudo verificar la compatibilidad de la actualización antes de descargarla. "
+                "La instalación existente se dejó intacta. "
+                f"URL: {NEOPOS_LOCAL_MANIFEST_URL}. Motivo: {error}"
+            ) from error
+
+        new_version = remote_manifest.get("app_version", "unknown")
+        migration_type = remote_manifest.get("database_migration", "unknown")
+        breaking = bool(remote_manifest.get("breaking_changes", False)) or migration_type == "breaking"
+        self.after(0, lambda: self.append_log(
+            f"[*] Versión instalada: {current_version}; versión disponible: {new_version} "
+            f"(migración: {migration_type})"
+        ))
+
+        if not breaking:
+            return
+
+        notes = remote_manifest.get(
+            "release_notes", "La versión declara cambios incompatibles."
+        )
+        confirmed = self.ask_confirmation(
+            "Actualización con cambios incompatibles",
+            f"La versión {new_version} declara cambios potencialmente incompatibles.\n\n"
+            f"{notes}\n\n"
+            "Todavía no se descargará ni modificará la instalación. "
+            "¿Deseas continuar?",
+        )
+        if not confirmed:
+            raise RuntimeError("Actualización cancelada por el usuario antes de descargarla.")
+        self.confirmed_breaking_version = new_version
+
     def backup_database(self, install_dir):
         compose_file = os.path.join(install_dir, "docker-compose.yml")
         if not os.path.exists(compose_file):
@@ -367,7 +423,7 @@ WantedBy=multi-user.target
             f"[*] Actualización detectada: {current_version} -> {new_version} "
             f"(migración: {migration_type})"
         ))
-        if breaking:
+        if breaking and new_version != self.confirmed_breaking_version:
             notes = new_manifest.get("release_notes", "La versión declara cambios incompatibles.")
             confirmed = self.ask_confirmation(
                 "Actualización con cambios incompatibles",
@@ -429,6 +485,7 @@ WantedBy=multi-user.target
 
             install_dir = os.path.join(os.path.expanduser("~"), "NeoPOS")
             zip_path = os.path.join(os.environ.get("TEMP", "/tmp"), "neopos-local.zip")
+            self.check_update_before_download(install_dir)
             if os.path.exists(zip_path):
                 os.remove(zip_path)
 

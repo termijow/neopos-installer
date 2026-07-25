@@ -63,6 +63,8 @@ jobs:
       with:
         name: linux-installer
         path: release-files/
+    - name: Extract NeoPOS compatibility manifest
+      run: unzip -p neopos-local.zip release-manifest.json > neopos-local-manifest.json
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
@@ -72,5 +74,6 @@ jobs:
         files: |
           release-files/*
           neopos-local.zip
+          neopos-local-manifest.json
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
