@@ -2,8 +2,8 @@ name: Build Installers
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 jobs:
   build-windows:
@@ -65,8 +65,9 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: latest
-        name: Latest Release
+        tag_name: ${{ github.ref_name }}
+        name: NeoPOS Installer ${{ github.ref_name }}
+        make_latest: true
         files: release-files/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
