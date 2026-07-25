@@ -8,6 +8,11 @@ import platform
 import urllib.request
 import zipfile
 
+
+NEOPOS_LOCAL_RELEASE_URL = (
+    "https://github.com/termijow/neopos-local/releases/latest/download/neopos-local.zip"
+)
+
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
 
@@ -119,53 +124,66 @@ class NeoPOSInstaller(ctk.CTk):
             update_status("Verificando dependencias (Docker)...")
             system = platform.system()
             self.after(0, lambda: self.append_log(f"[*] SO detectado: {system}"))
-            
-            if system == "Windows":
-                result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
-                if result.returncode != 0:
+
+            docker_available = False
+            try:
+                result = subprocess.run(
+                    ["docker", "--version"], capture_output=True, text=True
+                )
+                docker_available = result.returncode == 0
+            except FileNotFoundError:
+                pass
+
+            if system == "Windows" and not docker_available:
                     update_status("Descargando Docker Desktop (esto tomará unos minutos)...")
                     installer_path = os.path.join(os.environ["TEMP"], "DockerInstaller.exe")
-                    urllib.request.urlretrieve("https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe", installer_path)
-                    
+                    urllib.request.urlretrieve(
+                        "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe",
+                        installer_path,
+                    )
+
                     update_status("Instalando Docker Desktop silenciosamente...")
                     subprocess.run([installer_path, "install", "--quiet"], check=True)
                     update_status("Docker instalado correctamente.")
-                else:
-                    self.after(0, lambda: self.append_log("[+] Docker ya se encuentra instalado."))
-            elif system == "Linux":
-                result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
-                if result.returncode != 0:
+            elif system == "Linux" and not docker_available:
                     update_status("Instalando Docker Engine mediante apt...")
                     subprocess.run(["sudo", "apt-get", "update"], check=True)
                     subprocess.run(["sudo", "apt-get", "install", "-y", "docker.io", "docker-compose-v2"], check=True)
-                else:
-                    self.after(0, lambda: self.append_log("[+] Docker ya se encuentra instalado."))
+            elif docker_available:
+                self.after(0, lambda: self.append_log("[+] Docker ya se encuentra instalado."))
+            else:
+                raise RuntimeError(f"Sistema operativo no soportado: {system}")
 
             # 2. Deploy NeoPOS
             update_status("Descargando última versión de NeoPOS desde GitHub...")
-            
-            repo_url = "https://github.com/termijow/neopos-local/releases/download/prod/neopos-local-1.0.zip"
+
             install_dir = os.path.join(os.path.expanduser("~"), "NeoPOS")
-            
             zip_path = os.path.join(os.environ.get("TEMP", "/tmp"), "neopos-local.zip")
-            try:
-                urllib.request.urlretrieve(repo_url, zip_path)
-                self.after(0, lambda: self.append_log(f"[+] Archivo ZIP descargado en: {zip_path}"))
-            except Exception as e:
-                self.after(0, lambda: self.append_log(f"[-] ADVERTENCIA: Falló la descarga desde GitHub.\nMotivo: {e}\n(Saltando este paso si es modo desarrollo)"))
-                os.makedirs(install_dir, exist_ok=True)
-            
             if os.path.exists(zip_path):
-                update_status("Descomprimiendo archivos en la carpeta del usuario...")
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(install_dir)
-                self.after(0, lambda: self.append_log(f"[+] Archivos extraídos en: {install_dir}"))
+                os.remove(zip_path)
+
+            try:
+                urllib.request.urlretrieve(NEOPOS_LOCAL_RELEASE_URL, zip_path)
+            except Exception as error:
+                raise RuntimeError(
+                    "No se pudo descargar NeoPOS Local desde la release pública. "
+                    f"URL: {NEOPOS_LOCAL_RELEASE_URL}. Motivo: {error}"
+                ) from error
+
+            update_status("Descomprimiendo archivos en la carpeta del usuario...")
+            os.makedirs(install_dir, exist_ok=True)
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(install_dir)
+            self.after(0, lambda: self.append_log(f"[+] Archivos extraídos en: {install_dir}"))
             
             update_status(f"Iniciando servicios de backend ({target_type})...")
             
             if platform.system() == "Windows" and os.path.exists(os.path.join(install_dir, "start.ps1")):
                 self.after(0, lambda: self.append_log("[*] Ejecutando start.ps1 en Windows..."))
-                subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", os.path.join(install_dir, "start.ps1"), "--prod"])
+                subprocess.run([
+                    "powershell", "-ExecutionPolicy", "Bypass", "-File",
+                    os.path.join(install_dir, "start.ps1"), "--prod", "--no-logs",
+                ], check=True)
                 
                 # Crear acceso directo en el escritorio
                 try:
@@ -188,9 +206,15 @@ class NeoPOSInstaller(ctk.CTk):
                     self.after(0, lambda: self.append_log(f"[-] No se pudo crear el acceso directo: {ex}"))
             elif platform.system() == "Linux" and os.path.exists(os.path.join(install_dir, "docker-compose.yml")):
                 self.after(0, lambda: self.append_log("[*] Ejecutando docker compose up en Linux..."))
-                subprocess.run(["sudo", "docker", "compose", "-f", os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--build"])
+                subprocess.run([
+                    "sudo", "docker", "compose", "-f",
+                    os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--build",
+                ], check=True)
             else:
-                self.after(0, lambda: self.append_log("[-] No se encontraron scripts de inicio o no coincide el SO. Revisa la carpeta NeoPOS."))
+                raise RuntimeError(
+                    "La release no contiene un script de inicio compatible "
+                    f"con el sistema operativo {platform.system()}."
+                )
 
             # 3. Finish
             self.after(0, self.finish_installation)

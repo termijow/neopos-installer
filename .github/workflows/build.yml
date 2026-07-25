@@ -20,7 +20,7 @@ jobs:
         pip install pyinstaller
         pip install customtkinter
     - name: Build with PyInstaller
-      run: pyinstaller --onefile --windowed --name NeoPOS-Installer main.py
+      run: python -m PyInstaller --onefile --windowed --name NeoPOS-Installer main.py
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -41,7 +41,7 @@ jobs:
         pip install pyinstaller
         pip install customtkinter
     - name: Build with PyInstaller
-      run: pyinstaller --onefile --windowed --name NeoPOS-Installer-Linux main.py
+      run: python -m PyInstaller --onefile --windowed --name NeoPOS-Installer-Linux main.py
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
