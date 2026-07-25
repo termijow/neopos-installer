@@ -7,6 +7,7 @@ import threading
 import platform
 import tempfile
 import urllib.request
+import webbrowser
 import zipfile
 
 
@@ -281,6 +282,7 @@ WantedBy=multi-user.target
 
             update_status("Descomprimiendo archivos en la carpeta del usuario...")
             os.makedirs(install_dir, exist_ok=True)
+            self.install_dir = install_dir
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 install_root = os.path.abspath(install_dir) + os.sep
                 for member in zip_ref.infolist():
@@ -357,7 +359,11 @@ WantedBy=multi-user.target
 
     def finish_installation(self):
         self.progressbar.stop()
-        messagebox.showinfo("Success", "Installation complete!")
+        messagebox.showinfo(
+            "NeoPOS instalado",
+            "Instalación completa. NeoPOS Local está disponible en http://localhost:5173.",
+        )
+        webbrowser.open("http://localhost:5173")
         self.destroy()
         sys.exit(0)
 
