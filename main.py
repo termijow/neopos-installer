@@ -1,11 +1,15 @@
 import customtkinter as ctk
 import tkinter.messagebox as messagebox
 import sys
+import json
 import os
 import subprocess
 import threading
+import time
 import platform
+import shutil
 import tempfile
+from datetime import datetime
 import urllib.request
 import webbrowser
 import zipfile
@@ -22,6 +26,9 @@ ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark
 class NeoPOSInstaller(ctk.CTk):
     def __init__(self):
         super().__init__()
+
+        self.install_dir = None
+        self.log_path = os.path.join(tempfile.gettempdir(), "neopos-installer.log")
 
         self.title("NeoPOS Installer")
         self.geometry("600x450")
@@ -110,6 +117,11 @@ class NeoPOSInstaller(ctk.CTk):
         self.log_box.insert("end", text + "\n")
         self.log_box.see("end")
         self.log_box.configure(state="disabled")
+        try:
+            with open(self.log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(text + "\n")
+        except OSError:
+            pass
         print(text)
 
     def show_progress(self):
@@ -222,6 +234,151 @@ WantedBy=multi-user.target
                 "[!] No se pudo confirmar el estado de virtualización; Docker validará el requisito."
             ))
 
+    def find_docker_cli(self):
+        candidates = []
+        docker_from_path = shutil.which("docker")
+        if docker_from_path:
+            candidates.append(docker_from_path)
+        if platform.system() == "Windows":
+            program_files = os.environ.get("ProgramFiles")
+            local_app_data = os.environ.get("LOCALAPPDATA")
+            if program_files:
+                candidates.append(os.path.join(program_files, "Docker", "Docker", "resources", "bin", "docker.exe"))
+            if local_app_data:
+                candidates.append(os.path.join(local_app_data, "Programs", "Docker", "resources", "bin", "docker.exe"))
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+        return None
+
+    def ask_confirmation(self, title, message):
+        decision = {"confirmed": False}
+        completed = threading.Event()
+
+        def prompt():
+            decision["confirmed"] = messagebox.askyesno(title, message)
+            completed.set()
+
+        self.after(0, prompt)
+        completed.wait()
+        return decision["confirmed"]
+
+    @staticmethod
+    def read_manifest_from_zip(zip_ref):
+        try:
+            with zip_ref.open("release-manifest.json") as manifest_file:
+                return json.loads(manifest_file.read().decode("utf-8"))
+        except (KeyError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return {
+                "app_version": "legacy",
+                "database_migration": "unknown",
+                "breaking_changes": True,
+                "release_notes": "El paquete no incluye información de migración.",
+            }
+
+    @staticmethod
+    def read_installed_manifest(install_dir):
+        manifest_path = os.path.join(install_dir, "release-manifest.json")
+        if not os.path.exists(manifest_path):
+            return None
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as manifest_file:
+                return json.load(manifest_file)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def backup_database(self, install_dir):
+        compose_file = os.path.join(install_dir, "docker-compose.yml")
+        if not os.path.exists(compose_file):
+            return
+
+        docker_cli = self.find_docker_cli()
+        if not docker_cli:
+            raise RuntimeError("No se encontró docker.exe para respaldar la base de datos antes de actualizar.")
+
+        backup_dir = os.path.join(install_dir, "backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup_file = os.path.join(backup_dir, f"pos-{timestamp}.sql")
+
+        start_db = subprocess.run(
+            [docker_cli, "compose", "-p", "neopos-local", "-f", compose_file, "up", "-d", "postgres"],
+            capture_output=True,
+            text=True,
+        )
+        if start_db.returncode != 0:
+            raise RuntimeError(
+                "No se pudo iniciar PostgreSQL para crear el respaldo. "
+                f"{(start_db.stderr or start_db.stdout).strip()}"
+            )
+
+        dump = None
+        for _ in range(30):
+            dump = subprocess.run(
+                [
+                    docker_cli,
+                    "compose",
+                    "-p",
+                    "neopos-local",
+                    "-f",
+                    compose_file,
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "pg_dump",
+                    "-U",
+                    "pos",
+                    "-d",
+                    "pos",
+                ],
+                capture_output=True,
+            )
+            if dump.returncode == 0 and dump.stdout:
+                break
+            time.sleep(2)
+        if dump is None or dump.returncode != 0 or not dump.stdout:
+            details = dump.stderr.decode("utf-8", errors="replace").strip() if dump else "sin respuesta de pg_dump"
+            raise RuntimeError(f"No se pudo crear el respaldo de PostgreSQL. {details}")
+
+        with open(backup_file, "wb") as backup:
+            backup.write(dump.stdout)
+
+        env_file = os.path.join(install_dir, "local", "backend", ".env")
+        if os.path.exists(env_file):
+            shutil.copy2(env_file, os.path.join(backup_dir, f"backend-{timestamp}.env"))
+        self.after(0, lambda: self.append_log(f"[+] Respaldo de base de datos creado: {backup_file}"))
+
+    def prepare_update(self, install_dir, zip_ref):
+        existing_compose = os.path.join(install_dir, "docker-compose.yml")
+        if not os.path.exists(existing_compose):
+            return
+
+        new_manifest = self.read_manifest_from_zip(zip_ref)
+        current_manifest = self.read_installed_manifest(install_dir) or {
+            "app_version": "legacy",
+            "database_migration": "unknown",
+        }
+        current_version = current_manifest.get("app_version", "legacy")
+        new_version = new_manifest.get("app_version", "unknown")
+        migration_type = new_manifest.get("database_migration", "unknown")
+        breaking = bool(new_manifest.get("breaking_changes", False)) or migration_type == "breaking"
+
+        self.after(0, lambda: self.append_log(
+            f"[*] Actualización detectada: {current_version} -> {new_version} "
+            f"(migración: {migration_type})"
+        ))
+        if breaking:
+            notes = new_manifest.get("release_notes", "La versión declara cambios incompatibles.")
+            confirmed = self.ask_confirmation(
+                "Actualización con cambios incompatibles",
+                f"La versión {new_version} declara cambios potencialmente incompatibles.\n\n"
+                f"{notes}\n\nSe creará un respaldo antes de continuar. ¿Deseas aplicar la actualización?",
+            )
+            if not confirmed:
+                raise RuntimeError("Actualización cancelada por el usuario antes de modificar la instalación.")
+
+        self.backup_database(install_dir)
+
     def run_installation_task(self, target_type):
         try:
             def update_status(msg):
@@ -235,14 +392,11 @@ WantedBy=multi-user.target
 
             self.verify_windows_virtualization()
 
+            docker_cli = self.find_docker_cli()
             docker_available = False
-            try:
-                result = subprocess.run(
-                    ["docker", "--version"], capture_output=True, text=True
-                )
+            if docker_cli:
+                result = subprocess.run([docker_cli, "--version"], capture_output=True, text=True)
                 docker_available = result.returncode == 0
-            except FileNotFoundError:
-                pass
 
             if system == "Windows" and not docker_available:
                     update_status("Descargando Docker Desktop (esto tomará unos minutos)...")
@@ -255,6 +409,12 @@ WantedBy=multi-user.target
                     update_status("Instalando Docker Desktop silenciosamente...")
                     subprocess.run([installer_path, "install", "--quiet"], check=True)
                     update_status("Docker instalado correctamente.")
+                    docker_cli = self.find_docker_cli()
+                    if not docker_cli:
+                        raise RuntimeError(
+                            "Docker Desktop se instaló, pero Windows todavía no expone docker.exe. "
+                            "Reinicia Windows y vuelve a ejecutar el instalador."
+                        )
             elif system == "Linux" and not docker_available:
                     update_status("Instalando Docker Engine mediante apt...")
                     subprocess.run(["sudo", "apt-get", "update"], check=True)
@@ -289,6 +449,7 @@ WantedBy=multi-user.target
                     member_path = os.path.abspath(os.path.join(install_dir, member.filename))
                     if not member_path.startswith(install_root):
                         raise RuntimeError("El paquete descargado contiene una ruta inválida.")
+                self.prepare_update(install_dir, zip_ref)
                 zip_ref.extractall(install_dir)
             self.after(0, lambda: self.append_log(f"[+] Archivos extraídos en: {install_dir}"))
             
@@ -341,7 +502,7 @@ WantedBy=multi-user.target
             self.after(0, self.finish_installation)
         except Exception as e:
             self.after(0, lambda error=str(e): messagebox.showerror(
-                "Error de Instalación", f"Hubo un problema: {error}"
+                "Error de Instalación", f"Hubo un problema: {error}\n\nLog: {self.log_path}"
             ))
             self.after(0, self.destroy)
 
