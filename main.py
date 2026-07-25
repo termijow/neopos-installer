@@ -192,6 +192,35 @@ WantedBy=multi-user.target
             "[+] Servicio systemd configurado para iniciar NeoPOS al arrancar Linux."
         ))
 
+    def verify_windows_virtualization(self):
+        """Fail early with a useful message when BIOS virtualization is disabled."""
+        if platform.system() != "Windows":
+            return
+
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty VirtualizationFirmwareEnabled)",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        value = result.stdout.strip().lower()
+        if result.returncode == 0 and value in {"false", "no"}:
+            raise RuntimeError(
+                "Este equipo no tiene activada la virtualización de hardware.\n\n"
+                "Antes de instalar NeoPOS, reinicia el equipo y activa en BIOS/UEFI "
+                "Intel Virtualization Technology (VT-x) o AMD SVM/AMD-V.\n\n"
+                "Después guarda los cambios, inicia Windows y vuelve a ejecutar el instalador."
+            )
+
+        if result.returncode != 0 or value not in {"true", "yes"}:
+            self.after(0, lambda: self.append_log(
+                "[!] No se pudo confirmar el estado de virtualización; Docker validará el requisito."
+            ))
+
     def run_installation_task(self, target_type):
         try:
             def update_status(msg):
@@ -202,6 +231,8 @@ WantedBy=multi-user.target
             update_status("Verificando dependencias (Docker)...")
             system = platform.system()
             self.after(0, lambda: self.append_log(f"[*] SO detectado: {system}"))
+
+            self.verify_windows_virtualization()
 
             docker_available = False
             try:
