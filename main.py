@@ -5,6 +5,7 @@ import os
 import subprocess
 import threading
 import platform
+import tempfile
 import urllib.request
 import zipfile
 
@@ -12,6 +13,7 @@ import zipfile
 NEOPOS_LOCAL_RELEASE_URL = (
     "https://github.com/termijow/neopos-local/releases/latest/download/neopos-local.zip"
 )
+WINDOWS_AUTOSTART_TASK = "NeoPOS Local Services"
 
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
@@ -114,6 +116,82 @@ class NeoPOSInstaller(ctk.CTk):
         self.progress_frame.grid(row=2, column=0, padx=20, pady=20, sticky="ew")
         self.progressbar.start()
 
+    def register_windows_autostart(self, install_dir):
+        """Make Docker Compose start after login and survive process failures."""
+        start_script = os.path.join(install_dir, "start.ps1")
+        username = os.environ.get("USERNAME") or os.getlogin()
+        command = (
+            f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{start_script}" '
+            "--local --auto"
+        )
+        result = subprocess.run(
+            [
+                "schtasks",
+                "/Create",
+                "/TN",
+                WINDOWS_AUTOSTART_TASK,
+                "/SC",
+                "ONLOGON",
+                "/DELAY",
+                "0000:30",
+                "/RU",
+                username,
+                "/RL",
+                "LIMITED",
+                "/TR",
+                command,
+                "/F",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            details = (result.stderr or result.stdout).strip()
+            raise RuntimeError(
+                "No se pudo configurar el inicio automático de NeoPOS. "
+                f"El Programador de tareas respondió: {details}"
+            )
+        self.after(0, lambda: self.append_log(
+            "[+] Inicio automático configurado: los servicios se levantan al iniciar sesión "
+            "y Docker Compose los recupera si se caen."
+        ))
+
+    def register_linux_autostart(self, install_dir):
+        """Register a systemd unit for Linux installations."""
+        compose_file = os.path.join(install_dir, "docker-compose.yml")
+        unit = f"""[Unit]
+Description=NeoPOS Local Services
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={install_dir}
+ExecStart=/usr/bin/docker compose -f {compose_file} up -d --remove-orphans
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+"""
+        with tempfile.NamedTemporaryFile("w", suffix=".service", delete=False) as unit_file:
+            unit_file.write(unit)
+            unit_path = unit_file.name
+        try:
+            subprocess.run(
+                ["sudo", "install", "-m", "0644", unit_path, "/etc/systemd/system/neopos-local.service"],
+                check=True,
+            )
+            subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
+            subprocess.run(["sudo", "systemctl", "enable", "--now", "neopos-local.service"], check=True)
+        finally:
+            try:
+                os.remove(unit_path)
+            except OSError:
+                pass
+        self.after(0, lambda: self.append_log(
+            "[+] Servicio systemd configurado para iniciar NeoPOS al arrancar Linux."
+        ))
+
     def run_installation_task(self, target_type):
         try:
             def update_status(msg):
@@ -173,6 +251,11 @@ class NeoPOSInstaller(ctk.CTk):
             update_status("Descomprimiendo archivos en la carpeta del usuario...")
             os.makedirs(install_dir, exist_ok=True)
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                install_root = os.path.abspath(install_dir) + os.sep
+                for member in zip_ref.infolist():
+                    member_path = os.path.abspath(os.path.join(install_dir, member.filename))
+                    if not member_path.startswith(install_root):
+                        raise RuntimeError("El paquete descargado contiene una ruta inválida.")
                 zip_ref.extractall(install_dir)
             self.after(0, lambda: self.append_log(f"[+] Archivos extraídos en: {install_dir}"))
             
@@ -184,6 +267,9 @@ class NeoPOSInstaller(ctk.CTk):
                     "powershell", "-ExecutionPolicy", "Bypass", "-File",
                     os.path.join(install_dir, "start.ps1"), "--prod", "--no-logs",
                 ], check=True)
+
+                self.after(0, lambda: self.append_log("[*] Configurando recuperación automática de servicios..."))
+                self.register_windows_autostart(install_dir)
                 
                 # Crear acceso directo en el escritorio
                 try:
@@ -210,6 +296,8 @@ class NeoPOSInstaller(ctk.CTk):
                     "sudo", "docker", "compose", "-f",
                     os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--build",
                 ], check=True)
+                self.after(0, lambda: self.append_log("[*] Configurando inicio automático en Linux..."))
+                self.register_linux_autostart(install_dir)
             else:
                 raise RuntimeError(
                     "La release no contiene un script de inicio compatible "
@@ -219,7 +307,9 @@ class NeoPOSInstaller(ctk.CTk):
             # 3. Finish
             self.after(0, self.finish_installation)
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("Error de Instalación", f"Hubo un problema: {str(e)}"))
+            self.after(0, lambda error=str(e): messagebox.showerror(
+                "Error de Instalación", f"Hubo un problema: {error}"
+            ))
             self.after(0, self.destroy)
 
     def install_app(self):
