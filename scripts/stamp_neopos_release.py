@@ -14,8 +14,10 @@ REQUIRED_MEMBERS = {
     "start.ps1",
     "docker-compose.yml",
     "local/backend/.env.example",
-    "local/backend/Dockerfile",
-    "local/frontend/Dockerfile",
+    "release-images.json",
+    "images/api.tar",
+    "images/printer.tar",
+    "images/frontend.tar",
 }
 
 

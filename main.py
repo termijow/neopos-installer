@@ -253,6 +253,49 @@ class NeoPOSInstaller(ctk.CTk):
                     self.after(0, lambda value=line: self.append_log(value))
         return process.wait()
 
+    def ensure_release_images(self, docker_cli, install_dir):
+        """Load bundled production images without exposing application source."""
+        manifest_path = os.path.join(install_dir, "release-images.json")
+        if not os.path.exists(manifest_path):
+            return
+
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as manifest_file:
+                manifest = json.load(manifest_file)
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError(f"No se pudo leer release-images.json: {error}") from error
+
+        for image in manifest.get("images", []):
+            image_name = image.get("name")
+            archive = image.get("archive")
+            if not image_name or not archive:
+                raise RuntimeError("release-images.json contiene una imagen incompleta.")
+
+            inspect = subprocess.run(
+                [docker_cli, "image", "inspect", image_name],
+                capture_output=True,
+                text=True,
+            )
+            if inspect.returncode == 0:
+                self.after(0, lambda name=image_name: self.append_log(
+                    f"[IMAGE] {name} ya está cargada."
+                ))
+                continue
+
+            archive_path = os.path.join(install_dir, archive)
+            if not os.path.exists(archive_path):
+                raise RuntimeError(f"No se encontró la imagen de producción: {archive_path}")
+
+            self.after(0, lambda name=image_name: self.append_log(
+                f"[IMAGE] Cargando {name}..."
+            ))
+            load_command = [docker_cli, "load", "--input", archive_path]
+            if platform.system() == "Linux" and os.geteuid() != 0:
+                load_command.insert(0, "sudo")
+            returncode = self.run_streaming_process(load_command, cwd=install_dir)
+            if returncode != 0:
+                raise RuntimeError(f"No se pudo cargar la imagen {image_name}.")
+
     def finish_with_error(self, title, error):
         self.task_running = False
         self.progressbar.stop()
@@ -816,6 +859,7 @@ WantedBy=multi-user.target
                 self.prepare_update(install_dir, zip_ref)
                 zip_ref.extractall(install_dir)
             self.after(0, lambda: self.append_log(f"[+] Archivos extraídos en: {install_dir}"))
+            self.ensure_release_images(docker_cli, install_dir)
             
             update_status(f"Iniciando servicios de backend ({target_type})...")
             
@@ -885,7 +929,7 @@ WantedBy=multi-user.target
                 self.after(0, lambda: self.append_log("[*] Ejecutando docker compose up en Linux..."))
                 subprocess.run([
                     "sudo", "docker", "compose", "-f",
-                    os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--build",
+                    os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--remove-orphans",
                 ], check=True)
                 self.after(0, lambda: self.append_log("[*] Configurando inicio automático en Linux..."))
                 self.register_linux_autostart(install_dir)
@@ -952,6 +996,7 @@ WantedBy=multi-user.target
             if not docker_cli:
                 raise RuntimeError("No se encontró Docker. Usa primero el botón de instalación.")
             self.ensure_docker_ready(docker_cli)
+            self.ensure_release_images(docker_cli, install_dir)
 
             if platform.system() == "Windows":
                 powershell = self.find_powershell()
@@ -990,7 +1035,7 @@ WantedBy=multi-user.target
                 subprocess.run(
                     [
                         "sudo", "docker", "compose", "-p", "neopos-local", "-f", compose_file,
-                        "up", "-d", "--build", "--remove-orphans",
+                        "up", "-d", "--remove-orphans",
                     ],
                     check=True,
                 )
