@@ -38,6 +38,11 @@ class NeoPOSInstaller(ctk.CTk):
         self.install_dir = None
         self.confirmed_breaking_version = None
         self.log_path = os.path.join(tempfile.gettempdir(), "neopos-installer.log")
+        self.install_log_path = os.path.join(
+            os.path.expanduser("~"), "NeoPOS", "installer.log"
+        )
+        self.logs_visible = True
+        self.task_running = False
 
         self.title("NeoPOS Installer")
         self.geometry("820x500")
@@ -129,35 +134,137 @@ class NeoPOSInstaller(ctk.CTk):
         # Progress Frame (Hidden initially)
         self.progress_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.progress_frame.grid_columnconfigure(0, weight=1)
-        self.progress_frame.grid_rowconfigure(2, weight=1)
+        self.progress_frame.grid_rowconfigure(3, weight=1)
 
         self.progress_label = ctk.CTkLabel(self.progress_frame, text="Preparando...", font=ctk.CTkFont(size=14))
         self.progress_label.grid(row=0, column=0, pady=(10, 10))
 
         self.progressbar = ctk.CTkProgressBar(self.progress_frame, mode="indeterminate")
         self.progressbar.grid(row=1, column=0, sticky="ew", padx=40, pady=(0, 10))
-        
+
+        self.progress_actions = ctk.CTkFrame(self.progress_frame, fg_color="transparent")
+        self.progress_actions.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 6))
+        self.progress_actions.grid_columnconfigure(0, weight=1)
+        self.progress_actions.grid_columnconfigure(1, weight=1)
+        self.progress_actions.grid_columnconfigure(2, weight=1)
+
+        self.log_toggle_btn = ctk.CTkButton(
+            self.progress_actions,
+            text="Ocultar logs",
+            command=self.toggle_logs,
+        )
+        self.log_toggle_btn.grid(row=0, column=0, padx=4, sticky="ew")
+
+        self.open_log_btn = ctk.CTkButton(
+            self.progress_actions,
+            text="Abrir carpeta de logs",
+            command=self.open_log_location,
+        )
+        self.open_log_btn.grid(row=0, column=1, padx=4, sticky="ew")
+
+        self.close_btn = ctk.CTkButton(
+            self.progress_actions,
+            text="Cerrar",
+            command=self.destroy,
+            state="disabled",
+        )
+        self.close_btn.grid(row=0, column=2, padx=4, sticky="ew")
+
         self.log_box = ctk.CTkTextbox(self.progress_frame, height=150, font=ctk.CTkFont(size=12, family="Consolas"))
-        self.log_box.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 10))
+        self.log_box.grid(row=3, column=0, sticky="nsew", padx=20, pady=(0, 4))
         self.log_box.insert("0.0", "Iniciando proceso de instalación...\n")
         self.log_box.configure(state="disabled")
+
+        self.log_path_label = ctk.CTkLabel(
+            self.progress_frame,
+            text=f"Log principal: {self.install_log_path}\nCopia temporal: {self.log_path}",
+            text_color="gray",
+            font=ctk.CTkFont(size=10),
+            wraplength=760,
+        )
+        self.log_path_label.grid(row=4, column=0, padx=20, pady=(0, 6), sticky="w")
 
     def append_log(self, text):
         self.log_box.configure(state="normal")
         self.log_box.insert("end", text + "\n")
         self.log_box.see("end")
         self.log_box.configure(state="disabled")
-        try:
-            with open(self.log_path, "a", encoding="utf-8") as log_file:
-                log_file.write(text + "\n")
-        except OSError:
-            pass
+        for path in {self.log_path, self.install_log_path}:
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "a", encoding="utf-8") as log_file:
+                    log_file.write(text + "\n")
+            except OSError:
+                pass
         print(text)
 
     def show_progress(self):
+        self.task_running = True
+        for button in (self.app_btn, self.web_btn, self.repair_btn):
+            button.configure(state="disabled")
+        self.close_btn.configure(state="disabled")
+        self.log_toggle_btn.configure(state="normal")
+        self.open_log_btn.configure(state="normal")
         self.options_frame.grid_forget()
         self.progress_frame.grid(row=2, column=0, padx=20, pady=20, sticky="ew")
         self.progressbar.start()
+
+    def toggle_logs(self):
+        self.logs_visible = not self.logs_visible
+        if self.logs_visible:
+            self.log_box.grid(row=3, column=0, sticky="nsew", padx=20, pady=(0, 4))
+            self.log_toggle_btn.configure(text="Ocultar logs")
+        else:
+            self.log_box.grid_forget()
+            self.log_toggle_btn.configure(text="Mostrar logs")
+
+    def open_log_location(self):
+        path = self.install_log_path if os.path.exists(self.install_log_path) else self.log_path
+        directory = os.path.dirname(path)
+        try:
+            if platform.system() == "Windows":
+                os.startfile(directory)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", directory])
+            else:
+                subprocess.Popen(["xdg-open", directory])
+        except (OSError, AttributeError) as error:
+            self.append_log(f"[ERROR] No se pudo abrir la carpeta de logs: {error}")
+
+    def run_streaming_process(self, command, cwd=None, env=None):
+        """Run a process while forwarding stdout/stderr to the visible log."""
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            creationflags=creationflags,
+        )
+        if process.stdout is not None:
+            for line in process.stdout:
+                line = line.rstrip()
+                if line:
+                    self.after(0, lambda value=line: self.append_log(value))
+        return process.wait()
+
+    def finish_with_error(self, title, error):
+        self.task_running = False
+        self.progressbar.stop()
+        self.progress_label.configure(text="La operación terminó con errores")
+        self.append_log(f"[ERROR] {error}")
+        self.close_btn.configure(state="normal")
+        self.open_log_btn.configure(state="normal")
+        messagebox.showerror(
+            title,
+            f"{error}\n\nLog principal:\n{self.install_log_path}\n\n"
+            f"Copia temporal:\n{self.log_path}",
+        )
 
     def register_windows_autostart(self, install_dir):
         """Make Docker Compose start after login and survive process failures."""
@@ -725,7 +832,7 @@ WantedBy=multi-user.target
                 process_env["PATH"] = os.pathsep.join(
                     [docker_directory, process_env.get("PATH", "")]
                 )
-                start_result = subprocess.run(
+                start_returncode = self.run_streaming_process(
                     [
                         powershell,
                         "-NoProfile",
@@ -740,21 +847,11 @@ WantedBy=multi-user.target
                     ],
                     cwd=install_dir,
                     env=process_env,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
                 )
-                start_output = self._trim_process_output(
-                    "\n".join(filter(None, [start_result.stdout, start_result.stderr]))
-                )
-                if start_output:
-                    self.after(0, lambda output=start_output: self.append_log(output))
-                if start_result.returncode != 0:
+                if start_returncode != 0:
                     raise RuntimeError(
                         "start.ps1 no pudo iniciar NeoPOS Local "
-                        f"(código {start_result.returncode}).\n\n"
-                        f"Salida:\n{start_output or 'sin salida'}"
+                        f"(código {start_returncode}). Revisa los logs para ver la salida completa."
                     )
 
                 self.wait_for_local_services(
@@ -801,10 +898,9 @@ WantedBy=multi-user.target
             # 3. Finish
             self.after(0, self.finish_installation)
         except Exception as e:
-            self.after(0, lambda error=str(e): messagebox.showerror(
-                "Error de Instalación", f"Hubo un problema: {error}\n\nLog: {self.log_path}"
+            self.after(0, lambda error=str(e): self.finish_with_error(
+                "Error de Instalación", f"Hubo un problema: {error}"
             ))
-            self.after(0, self.destroy)
 
     def install_app(self):
         response = messagebox.askyesno(
@@ -866,7 +962,7 @@ WantedBy=multi-user.target
                 process_env["PATH"] = os.pathsep.join(
                     [os.path.dirname(docker_cli), process_env.get("PATH", "")]
                 )
-                result = subprocess.run(
+                returncode = self.run_streaming_process(
                     [
                         powershell,
                         "-NoProfile",
@@ -881,20 +977,11 @@ WantedBy=multi-user.target
                     ],
                     cwd=install_dir,
                     env=process_env,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
                 )
-                output = self._trim_process_output(
-                    "\n".join(filter(None, [result.stdout, result.stderr]))
-                )
-                if output:
-                    self.after(0, lambda value=output: self.append_log(value))
-                if result.returncode != 0:
+                if returncode != 0:
                     raise RuntimeError(
-                        f"start.ps1 no pudo iniciar NeoPOS Local (código {result.returncode}).\n\n"
-                        f"Salida:\n{output or 'sin salida'}"
+                        f"start.ps1 no pudo iniciar NeoPOS Local (código {returncode}). "
+                        "Revisa los logs para ver la salida completa."
                     )
                 self.wait_for_local_services(docker_cli, compose_file)
                 self.register_windows_autostart(install_dir)
@@ -913,12 +1000,13 @@ WantedBy=multi-user.target
 
             self.after(0, self.finish_installation)
         except Exception as error:
-            self.after(0, lambda message=str(error): messagebox.showerror(
+            self.after(0, lambda message=str(error): self.finish_with_error(
                 "Error al iniciar NeoPOS",
-                f"No se pudieron iniciar los servicios: {message}\n\nLog: {self.log_path}",
+                f"No se pudieron iniciar los servicios: {message}",
             ))
 
     def finish_installation(self):
+        self.task_running = False
         self.progressbar.stop()
         messagebox.showinfo(
             "NeoPOS instalado",
