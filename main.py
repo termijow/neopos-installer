@@ -36,10 +36,15 @@ REQUIRED_RELEASE_MEMBERS = {
     "init.sql",
     "local/backend/.env.example",
     "release-images.json",
+    "release-manifest.json",
     "images/api.tar",
     "images/printer.tar",
     "images/frontend.tar",
 }
+PERSISTENT_VOLUME_MOUNTS = (
+    "postgres-data:/var/lib/postgresql/data",
+    "minio-data:/data",
+)
 FORBIDDEN_RELEASE_SUFFIXES = (
     ".go",
     ".ts",
@@ -317,6 +322,17 @@ class NeoPOSInstaller(ctk.CTk):
                 "La build de producción está incompleta. Falta(n): " + ", ".join(missing)
             )
 
+        try:
+            compose_text = zip_ref.read("docker-compose.yml").decode("utf-8")
+        except (KeyError, UnicodeDecodeError) as error:
+            raise RuntimeError(f"No se pudo leer docker-compose.yml: {error}") from error
+        missing_mounts = [mount for mount in PERSISTENT_VOLUME_MOUNTS if mount not in compose_text]
+        if missing_mounts:
+            raise RuntimeError(
+                "La build no declara los volúmenes persistentes requeridos: "
+                + ", ".join(missing_mounts)
+            )
+
         forbidden = sorted(
             name
             for name in members
@@ -337,6 +353,15 @@ class NeoPOSInstaller(ctk.CTk):
         images = manifest.get("images") if isinstance(manifest, dict) else None
         if not isinstance(images, list) or not images:
             raise RuntimeError("release-images.json no contiene imágenes de producción.")
+
+        try:
+            release_manifest = json.loads(zip_ref.read("release-manifest.json").decode("utf-8"))
+        except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RuntimeError(f"No se pudo leer release-manifest.json: {error}") from error
+        release_version = release_manifest.get("app_version") if isinstance(release_manifest, dict) else None
+        if not isinstance(release_version, str) or not release_version.strip():
+            raise RuntimeError("release-manifest.json no contiene una versión de producción válida.")
+
         for image in images:
             if not isinstance(image, dict):
                 raise RuntimeError("release-images.json contiene una imagen inválida.")
@@ -346,6 +371,11 @@ class NeoPOSInstaller(ctk.CTk):
                 raise RuntimeError("release-images.json contiene una ruta de imagen inválida.")
             if archive not in members:
                 raise RuntimeError(f"No se encontró la imagen de producción declarada: {archive}")
+            image_tag = str(image_name).rsplit(":", 1)[-1]
+            if image_tag != release_version:
+                raise RuntimeError(
+                    f"La imagen {image_name} no coincide con la versión del paquete {release_version}."
+                )
 
         corrupt_member = zip_ref.testzip()
         if corrupt_member is not None:
@@ -442,6 +472,7 @@ class NeoPOSInstaller(ctk.CTk):
                 f"postgres://pos:{postgres_password}@postgres:5432/pos?sslmode=disable",
             )
             self._write_env_value(backend_env, "JWT_SECRET", secrets.token_hex(32))
+            self._write_env_value(backend_env, "LICENSE_SIGNING_SECRET", secrets.token_hex(32))
             self._write_env_value(backend_env, "ADMIN_PASSWORD", admin_password)
             cashier_password = secrets.token_hex(24)
             self._write_env_value(backend_env, "CASHIER_PASSWORD", cashier_password)
@@ -1002,6 +1033,22 @@ WantedBy=multi-user.target
             return
 
         new_manifest = self.read_manifest_from_zip(zip_ref)
+        try:
+            with open(existing_compose, "r", encoding="utf-8") as current_compose:
+                current_compose_text = current_compose.read()
+            new_compose_text = zip_ref.read("docker-compose.yml").decode("utf-8")
+        except (OSError, KeyError, UnicodeDecodeError) as error:
+            raise RuntimeError(
+                "No se pudo comprobar la configuración persistente antes de actualizar: "
+                f"{error}"
+            ) from error
+
+        for mount in PERSISTENT_VOLUME_MOUNTS:
+            if mount not in current_compose_text or mount not in new_compose_text:
+                raise RuntimeError(
+                    "Actualización detenida para proteger la información: el compose actual "
+                    "y el nuevo deben conservar los volúmenes nombrados de PostgreSQL y MinIO."
+                )
         current_manifest = self.read_installed_manifest(install_dir) or {
             "app_version": "legacy",
             "database_migration": "unknown",
@@ -1026,6 +1073,10 @@ WantedBy=multi-user.target
                 raise RuntimeError("Actualización cancelada por el usuario antes de modificar la instalación.")
 
         self.backup_database(install_dir)
+        self.after(0, lambda: self.append_log(
+            "[+] Protección de datos: se conservarán los volúmenes Docker postgres-data y minio-data. "
+            "La actualización no ejecuta 'docker compose down -v'."
+        ))
 
     def run_installation_task(self, target_type):
         try:

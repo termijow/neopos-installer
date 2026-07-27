@@ -41,7 +41,7 @@ docker compose config --quiet
 
 ```bash
 cd /ruta/neopos-local
-RELEASE_VERSION=v0.1.10 python3 scripts/build_release.py
+RELEASE_VERSION=v0.1.15 python3 scripts/build_release.py
 ```
 
 Este script utiliza el código privado únicamente como contexto de compilación:
@@ -102,9 +102,9 @@ git status
 
 git add README.md main.py build_windows.bat .github/workflows/build.yml \
   scripts/stamp_neopos_release.py neopos-local.zip
-git commit -m "release: v0.1.10"
-git tag v0.1.10
-git push origin main v0.1.10
+git commit -m "release: v0.1.15"
+git tag v0.1.15
+git push origin main v0.1.15
 ```
 
 El tag activa `.github/workflows/build.yml`. GitHub Actions:
@@ -119,8 +119,8 @@ El tag activa `.github/workflows/build.yml`. GitHub Actions:
 ### 6. Validar la publicación
 
 ```bash
-curl -fL -o /tmp/NeoPOS-Installer-v0.1.10.exe \
-  https://github.com/termijow/neopos-installer/releases/download/v0.1.10/NeoPOS-Installer-v0.1.10.exe
+curl -fL -o /tmp/NeoPOS-Installer-v0.1.15.exe \
+  https://github.com/termijow/neopos-installer/releases/download/v0.1.15/NeoPOS-Installer-v0.1.15.exe
 
 curl -fL -o /tmp/neopos-local.zip \
   https://github.com/termijow/neopos-installer/releases/latest/download/neopos-local.zip
@@ -150,7 +150,7 @@ vuelve a levantar NeoPOS al iniciar sesión.
 
 En una instalación nueva, el instalador verifica que existan las tres imágenes
 de producción y la carpeta `local/backend` antes de iniciar Compose. También
-genera secretos locales para PostgreSQL, MinIO, JWT y las cuentas iniciales; la
+genera secretos locales para PostgreSQL, MinIO, JWT, la firma de licencias y las cuentas iniciales; la
 contraseña del administrador queda temporalmente en `NeoPOS/admin-credentials.txt`.
 Los puertos se publican únicamente en `127.0.0.1`.
 
@@ -162,10 +162,12 @@ El instalador Windows solicita permisos de administrador mediante UAC desde el
 inicio. Esto permite crear la tarea de recuperación automática de NeoPOS sin
 tener que ejecutarlo manualmente con clic derecho como administrador.
 
-Las actualizaciones conservan el volumen de PostgreSQL, crean un respaldo antes
-de reemplazar archivos y consultan `neopos-local-manifest.json` antes de bajar el
-ZIP completo. Los cambios incompatibles deben marcarse como `breaking` en el
-manifiesto para pedir confirmación.
+Las actualizaciones conservan los volúmenes nombrados `postgres-data` y
+`minio-data`, crean un respaldo antes de reemplazar archivos y consultan
+`neopos-local-manifest.json` antes de bajar el ZIP completo. El instalador no
+ejecuta `docker compose down -v`, por lo que los datos no se eliminan durante
+una actualización. Los cambios incompatibles deben marcarse como `breaking` en
+el manifiesto para pedir confirmación.
 
 ## Seguridad
 

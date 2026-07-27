@@ -22,9 +22,13 @@ REQUIRED_MEMBERS = {
     "images/frontend.tar",
 }
 FORBIDDEN_SUFFIXES = (".go", ".ts", ".tsx", ".js", ".jsx", "Dockerfile", ".env")
+PERSISTENT_VOLUME_MOUNTS = (
+    "postgres-data:/var/lib/postgresql/data",
+    "minio-data:/data",
+)
 
 
-def validate_source_free_archive(archive: zipfile.ZipFile) -> None:
+def validate_source_free_archive(archive: zipfile.ZipFile, expected_version: str) -> None:
     members = set()
     for info in archive.infolist():
         name = info.filename.replace("\\", "/")
@@ -42,6 +46,17 @@ def validate_source_free_archive(archive: zipfile.ZipFile) -> None:
     if missing:
         missing_text = ", ".join(sorted(missing))
         raise RuntimeError(f"El paquete NeoPOS Local está incompleto: {missing_text}")
+
+    try:
+        compose_text = archive.read("docker-compose.yml").decode("utf-8")
+    except (KeyError, UnicodeDecodeError) as error:
+        raise RuntimeError(f"No se pudo leer docker-compose.yml: {error}") from error
+    missing_mounts = [mount for mount in PERSISTENT_VOLUME_MOUNTS if mount not in compose_text]
+    if missing_mounts:
+        raise RuntimeError(
+            "El paquete no conserva los volúmenes persistentes requeridos: "
+            + ", ".join(missing_mounts)
+        )
 
     forbidden = sorted(
         name
@@ -61,12 +76,28 @@ def validate_source_free_archive(archive: zipfile.ZipFile) -> None:
     images = manifest.get("images") if isinstance(manifest, dict) else None
     if not isinstance(images, list) or not images:
         raise RuntimeError("release-images.json no contiene imágenes de producción.")
+
+    try:
+        release_manifest = json.loads(archive.read("release-manifest.json").decode("utf-8"))
+    except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"No se pudo leer release-manifest.json: {error}") from error
+    package_version = release_manifest.get("app_version") if isinstance(release_manifest, dict) else None
+    if package_version != expected_version:
+        raise RuntimeError(
+            f"La versión del paquete ({package_version}) no coincide con la release ({expected_version})."
+        )
+
     for image in images:
         if not isinstance(image, dict) or not image.get("name"):
             raise RuntimeError("release-images.json contiene una imagen incompleta.")
         image_path = str(image.get("archive", "")).replace("\\", "/")
         if image_path.startswith("/") or ".." in image_path.split("/") or image_path not in members:
             raise RuntimeError(f"No se encontró la imagen declarada: {image_path}")
+        image_tag = str(image["name"]).rsplit(":", 1)[-1]
+        if image_tag != expected_version:
+            raise RuntimeError(
+                f"La imagen {image['name']} no coincide con la release {expected_version}."
+            )
 
     corrupt_member = archive.testzip()
     if corrupt_member is not None:
@@ -91,7 +122,7 @@ def build_manifest(archive: zipfile.ZipFile, version: str) -> dict:
 
 def stamp_archive(archive_path: Path, manifest_path: Path, version: str) -> None:
     with zipfile.ZipFile(archive_path, "r") as source:
-        validate_source_free_archive(source)
+        validate_source_free_archive(source, version)
 
         manifest = build_manifest(source, version)
         archive_directory = archive_path.parent
