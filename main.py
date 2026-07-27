@@ -572,14 +572,17 @@ class NeoPOSInstaller(ctk.CTk):
         )
         if result.returncode != 0:
             details = (result.stderr or result.stdout).strip()
-            raise RuntimeError(
-                "No se pudo configurar el inicio automático de NeoPOS. "
-                f"El Programador de tareas respondió: {details}"
-            )
+            self.after(0, lambda details=details: self.append_log(
+                "[WARN] No se pudo configurar el inicio automático de NeoPOS. "
+                "Los servicios ya están iniciados, pero no se recuperarán automáticamente "
+                f"al iniciar sesión. El Programador de tareas respondió: {details}"
+            ))
+            return False
         self.after(0, lambda: self.append_log(
             "[+] Inicio automático configurado: los servicios se levantan al iniciar sesión "
             "y Docker Compose los recupera si se caen."
         ))
+        return True
 
     def register_linux_autostart(self, install_dir):
         """Register a systemd unit for Linux installations."""

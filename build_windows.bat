@@ -4,7 +4,7 @@ echo NeoPOS Installer - Windows Builder
 echo ===================================
 
 set "VERSION=%~1"
-if "%VERSION%"=="" set VERSION=v0.1.13
+if "%VERSION%"=="" set VERSION=v0.1.14
 echo Version del instalador: %VERSION%
 
 echo Instalando dependencias necesarias (pyinstaller, customtkinter)...
@@ -22,7 +22,7 @@ if not exist neopos-local.zip (
 set "RELEASE_VERSION=%VERSION%"
 python scripts\stamp_neopos_release.py neopos-local.zip neopos-local-manifest.json
 if errorlevel 1 exit /b %errorlevel%
-python -m PyInstaller --clean --onefile --windowed --add-data "neopos-local.zip;." --name "NeoPOS-Installer-%VERSION%" main.py
+python -m PyInstaller --clean --onefile --windowed --uac-admin --add-data "neopos-local.zip;." --name "NeoPOS-Installer-%VERSION%" main.py
 if errorlevel 1 (
     echo Error: PyInstaller no pudo compilar el instalador.
     exit /b %errorlevel%

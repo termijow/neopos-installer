@@ -24,7 +24,7 @@ jobs:
         RELEASE_VERSION: ${{ github.ref_name }}
       run: python scripts/stamp_neopos_release.py neopos-local.zip neopos-local-manifest.json
     - name: Build with PyInstaller
-      run: python -m PyInstaller --clean --onefile --windowed --add-data "neopos-local.zip;." --name "NeoPOS-Installer-${{ github.ref_name }}" main.py
+      run: python -m PyInstaller --clean --onefile --windowed --uac-admin --add-data "neopos-local.zip;." --name "NeoPOS-Installer-${{ github.ref_name }}" main.py
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:

@@ -158,6 +158,10 @@ La comprobación de virtualización en Windows es únicamente informativa: si
 PowerShell no puede leerla o la reporta como desactivada, el instalador muestra
 un aviso y permite que Docker valide por sí mismo si puede iniciar.
 
+El instalador Windows solicita permisos de administrador mediante UAC desde el
+inicio. Esto permite crear la tarea de recuperación automática de NeoPOS sin
+tener que ejecutarlo manualmente con clic derecho como administrador.
+
 Las actualizaciones conservan el volumen de PostgreSQL, crean un respaldo antes
 de reemplazar archivos y consultan `neopos-local-manifest.json` antes de bajar el
 ZIP completo. Los cambios incompatibles deben marcarse como `breaking` en el
