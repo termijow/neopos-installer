@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 import platform
+import secrets
 import shutil
 import tempfile
 from datetime import datetime
@@ -27,6 +28,27 @@ LOCAL_COMPOSE_SERVICES = {"api", "frontend", "postgres", "printer", "minio"}
 LOCAL_FRONTEND_URL = "http://127.0.0.1:5173"
 DOCKER_READY_TIMEOUT_SECONDS = 180
 LOCAL_SERVICES_READY_TIMEOUT_SECONDS = 180
+BUNDLED_RELEASE_FILENAME = "neopos-local.zip"
+REQUIRED_RELEASE_MEMBERS = {
+    "start.ps1",
+    "docker-compose.yml",
+    "Abrir_NeoPOS.bat",
+    "init.sql",
+    "local/backend/.env.example",
+    "release-images.json",
+    "images/api.tar",
+    "images/printer.tar",
+    "images/frontend.tar",
+}
+FORBIDDEN_RELEASE_SUFFIXES = (
+    ".go",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    "Dockerfile",
+    ".env",
+)
 
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
@@ -253,11 +275,214 @@ class NeoPOSInstaller(ctk.CTk):
                     self.after(0, lambda value=line: self.append_log(value))
         return process.wait()
 
+    @staticmethod
+    def find_bundled_release():
+        """Find the production ZIP embedded by PyInstaller or next to main.py."""
+        locations = []
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            locations.append(meipass)
+        locations.append(os.path.dirname(os.path.abspath(__file__)))
+        locations.append(os.path.dirname(os.path.abspath(sys.executable)))
+
+        seen = set()
+        for location in locations:
+            if not location or location in seen:
+                continue
+            seen.add(location)
+            candidate = os.path.join(location, BUNDLED_RELEASE_FILENAME)
+            if os.path.isfile(candidate):
+                return candidate
+        return None
+
+    @classmethod
+    def validate_release_zip(cls, zip_ref, source_label="el paquete"):
+        """Validate the source-free production package before it is extracted."""
+        members = set()
+        for info in zip_ref.infolist():
+            name = info.filename.replace("\\", "/")
+            if not name or name.endswith("/"):
+                continue
+            parts = name.split("/")
+            if name.startswith("/") or any(part in {"", ".", ".."} for part in parts):
+                raise RuntimeError(f"{source_label} contiene una ruta inválida: {info.filename}")
+            mode = (info.external_attr >> 16) & 0o170000
+            if mode == 0o120000:
+                raise RuntimeError(f"{source_label} contiene un enlace simbólico no permitido: {name}")
+            members.add(name)
+
+        missing = sorted(REQUIRED_RELEASE_MEMBERS - members)
+        if missing:
+            raise RuntimeError(
+                "La build de producción está incompleta. Falta(n): " + ", ".join(missing)
+            )
+
+        forbidden = sorted(
+            name
+            for name in members
+            if name.endswith(FORBIDDEN_RELEASE_SUFFIXES)
+            or name.startswith((".git/", "local/backend/internal/", "local/frontend/src/"))
+        )
+        if forbidden:
+            raise RuntimeError(
+                "La build de producción contiene código fuente o secretos: "
+                + ", ".join(forbidden[:12])
+            )
+
+        try:
+            manifest = json.loads(zip_ref.read("release-images.json").decode("utf-8"))
+        except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RuntimeError(f"No se pudo leer release-images.json: {error}") from error
+
+        images = manifest.get("images") if isinstance(manifest, dict) else None
+        if not isinstance(images, list) or not images:
+            raise RuntimeError("release-images.json no contiene imágenes de producción.")
+        for image in images:
+            if not isinstance(image, dict):
+                raise RuntimeError("release-images.json contiene una imagen inválida.")
+            image_name = image.get("name")
+            archive = str(image.get("archive", "")).replace("\\", "/")
+            if not image_name or not archive or archive.startswith("/") or ".." in archive.split("/"):
+                raise RuntimeError("release-images.json contiene una ruta de imagen inválida.")
+            if archive not in members:
+                raise RuntimeError(f"No se encontró la imagen de producción declarada: {archive}")
+
+        corrupt_member = zip_ref.testzip()
+        if corrupt_member is not None:
+            raise RuntimeError(f"El ZIP de producción está corrupto: {corrupt_member}")
+
+    @classmethod
+    def validate_release_file(cls, archive_path):
+        try:
+            with zipfile.ZipFile(archive_path, "r") as zip_ref:
+                cls.validate_release_zip(zip_ref, os.path.basename(archive_path))
+        except zipfile.BadZipFile as error:
+            raise RuntimeError(f"El archivo de producción no es un ZIP válido: {error}") from error
+
+    @classmethod
+    def validate_extracted_release(cls, install_dir):
+        missing = sorted(
+            member
+            for member in REQUIRED_RELEASE_MEMBERS
+            if not os.path.isfile(os.path.join(install_dir, *member.split("/")))
+        )
+        if missing:
+            raise RuntimeError(
+                "La instalación quedó incompleta; falta(n): " + ", ".join(missing)
+            )
+
+    @staticmethod
+    def _read_env_file(env_path):
+        values = {}
+        if not os.path.exists(env_path):
+            return values
+        with open(env_path, "r", encoding="utf-8-sig") as env_file:
+            for line in env_file:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                values[key.strip()] = value
+        return values
+
+    @staticmethod
+    def _write_env_value(env_path, key, value):
+        lines = []
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8-sig") as env_file:
+                lines = env_file.read().splitlines()
+        prefix = f"{key}="
+        for index, line in enumerate(lines):
+            if line.startswith(prefix):
+                lines[index] = f"{key}={value}"
+                break
+        else:
+            lines.append(f"{key}={value}")
+        with open(env_path, "w", encoding="utf-8", newline="\n") as env_file:
+            env_file.write("\n".join(lines) + "\n")
+        try:
+            os.chmod(env_path, 0o600)
+        except OSError:
+            pass
+
+    def ensure_runtime_environment(self, install_dir):
+        """Create local secrets without putting credentials in the release ZIP."""
+        backend_dir = os.path.join(install_dir, "local", "backend")
+        backend_env = os.path.join(backend_dir, ".env")
+        root_env = os.path.join(install_dir, ".env")
+        os.makedirs(backend_dir, exist_ok=True)
+        legacy_install = os.path.exists(backend_env)
+
+        root_values = self._read_env_file(root_env)
+        postgres_password = root_values.get("POSTGRES_PASSWORD", "")
+        minio_user = root_values.get("MINIO_ROOT_USER", "")
+        minio_password = root_values.get("MINIO_ROOT_PASSWORD", "")
+        if not postgres_password:
+            postgres_password = "pos" if legacy_install else secrets.token_hex(32)
+            self._write_env_value(root_env, "POSTGRES_PASSWORD", postgres_password)
+        if not minio_user:
+            minio_user = "admin" if legacy_install else "neopos-minio"
+            self._write_env_value(root_env, "MINIO_ROOT_USER", minio_user)
+        if not minio_password:
+            minio_password = "password123" if legacy_install else secrets.token_hex(32)
+            self._write_env_value(root_env, "MINIO_ROOT_PASSWORD", minio_password)
+
+        if not os.path.exists(backend_env):
+            example_path = os.path.join(backend_dir, ".env.example")
+            if not os.path.isfile(example_path):
+                raise RuntimeError(
+                    "Falta la carpeta o configuración de producción: " + example_path
+                )
+            shutil.copy2(example_path, backend_env)
+            admin_password = secrets.token_hex(24)
+            self._write_env_value(backend_env, "APP_ENV", "production")
+            self._write_env_value(
+                backend_env,
+                "DATABASE_URL",
+                f"postgres://pos:{postgres_password}@postgres:5432/pos?sslmode=disable",
+            )
+            self._write_env_value(backend_env, "JWT_SECRET", secrets.token_hex(32))
+            self._write_env_value(backend_env, "ADMIN_PASSWORD", admin_password)
+            cashier_password = secrets.token_hex(24)
+            self._write_env_value(backend_env, "CASHIER_PASSWORD", cashier_password)
+            self._write_env_value(backend_env, "MINIO_ROOT_USER", minio_user)
+            self._write_env_value(backend_env, "MINIO_ROOT_PASSWORD", minio_password)
+
+            credentials_path = os.path.join(install_dir, "admin-credentials.txt")
+            with open(credentials_path, "w", encoding="utf-8", newline="\n") as credentials:
+                credentials.write(
+                    "NeoPOS Local - credenciales iniciales\n"
+                    f"Administrador: {self._read_env_file(backend_env).get('ADMIN_EMAIL', 'admin@pos.local')}\n"
+                    f"Contraseña: {admin_password}\n\n"
+                    f"Cajero: {self._read_env_file(backend_env).get('CASHIER_EMAIL', 'cajero@neopos.com')}\n"
+                    f"Contraseña: {cashier_password}\n\n"
+                    "Guarda este archivo en un lugar seguro y elimínalo cuando cambies la contraseña.\n"
+                )
+            try:
+                os.chmod(credentials_path, 0o600)
+            except OSError:
+                pass
+        else:
+            backend_values = self._read_env_file(backend_env)
+            self._write_env_value(
+                backend_env,
+                "MINIO_ROOT_USER",
+                backend_values.get("MINIO_ROOT_USER") or minio_user,
+            )
+            self._write_env_value(
+                backend_env,
+                "MINIO_ROOT_PASSWORD",
+                backend_values.get("MINIO_ROOT_PASSWORD") or minio_password,
+            )
+
     def ensure_release_images(self, docker_cli, install_dir):
-        """Load bundled production images without exposing application source."""
+        """Load every bundled production image and fail clearly if one is missing."""
         manifest_path = os.path.join(install_dir, "release-images.json")
         if not os.path.exists(manifest_path):
-            return
+            raise RuntimeError(
+                "No se encontró release-images.json en la instalación. "
+                "La build de producción no se extrajo completa."
+            )
 
         try:
             with open(manifest_path, "r", encoding="utf-8") as manifest_file:
@@ -265,7 +490,12 @@ class NeoPOSInstaller(ctk.CTk):
         except (OSError, json.JSONDecodeError) as error:
             raise RuntimeError(f"No se pudo leer release-images.json: {error}") from error
 
-        for image in manifest.get("images", []):
+        images = manifest.get("images") if isinstance(manifest, dict) else None
+        if not isinstance(images, list) or not images:
+            raise RuntimeError("release-images.json no contiene imágenes de producción.")
+
+        install_root = os.path.abspath(install_dir)
+        for image in images:
             image_name = image.get("name")
             archive = image.get("archive")
             if not image_name or not archive:
@@ -282,7 +512,9 @@ class NeoPOSInstaller(ctk.CTk):
                 ))
                 continue
 
-            archive_path = os.path.join(install_dir, archive)
+            archive_path = os.path.abspath(os.path.join(install_dir, archive))
+            if os.path.commonpath((install_root, archive_path)) != install_root:
+                raise RuntimeError(f"La ruta de imagen no es segura: {archive}")
             if not os.path.exists(archive_path):
                 raise RuntimeError(f"No se encontró la imagen de producción: {archive_path}")
 
@@ -636,8 +868,17 @@ WantedBy=multi-user.target
         except (OSError, json.JSONDecodeError):
             return None
 
-    def check_update_before_download(self, install_dir):
-        """Check the public release manifest before downloading the full package."""
+    @classmethod
+    def read_manifest_from_archive(cls, archive_path):
+        try:
+            with zipfile.ZipFile(archive_path, "r") as zip_ref:
+                cls.validate_release_zip(zip_ref, os.path.basename(archive_path))
+                return cls.read_manifest_from_zip(zip_ref)
+        except zipfile.BadZipFile as error:
+            raise RuntimeError(f"El archivo de producción no es un ZIP válido: {error}") from error
+
+    def check_update_before_download(self, install_dir, bundled_manifest=None):
+        """Check update compatibility using the embedded release when available."""
         existing_compose = os.path.join(install_dir, "docker-compose.yml")
         if not os.path.exists(existing_compose):
             return
@@ -648,20 +889,23 @@ WantedBy=multi-user.target
         }
         current_version = current_manifest.get("app_version", "legacy")
         self.after(0, lambda: self.append_log(
-            "[*] Verificando compatibilidad de la actualización antes de descargarla..."
+            "[*] Verificando compatibilidad de la actualización antes de instalarla..."
         ))
 
-        try:
-            with urllib.request.urlopen(NEOPOS_LOCAL_MANIFEST_URL, timeout=30) as response:
-                remote_manifest = json.loads(response.read().decode("utf-8"))
-            if not isinstance(remote_manifest, dict):
-                raise ValueError("el manifiesto remoto no tiene un objeto JSON válido")
-        except Exception as error:
-            raise RuntimeError(
-                "No se pudo verificar la compatibilidad de la actualización antes de descargarla. "
-                "La instalación existente se dejó intacta. "
-                f"URL: {NEOPOS_LOCAL_MANIFEST_URL}. Motivo: {error}"
-            ) from error
+        if bundled_manifest is not None:
+            remote_manifest = bundled_manifest
+        else:
+            try:
+                with urllib.request.urlopen(NEOPOS_LOCAL_MANIFEST_URL, timeout=30) as response:
+                    remote_manifest = json.loads(response.read().decode("utf-8"))
+                if not isinstance(remote_manifest, dict):
+                    raise ValueError("el manifiesto remoto no tiene un objeto JSON válido")
+            except Exception as error:
+                raise RuntimeError(
+                    "No se pudo verificar la compatibilidad de la actualización antes de instalarla. "
+                    "La instalación existente se dejó intacta. "
+                    f"URL: {NEOPOS_LOCAL_MANIFEST_URL}. Motivo: {error}"
+                ) from error
 
         new_version = remote_manifest.get("app_version", "unknown")
         migration_type = remote_manifest.get("database_migration", "unknown")
@@ -830,34 +1074,56 @@ WantedBy=multi-user.target
 
             self.ensure_docker_ready(docker_cli)
 
-            # 2. Deploy NeoPOS
-            update_status("Descargando última versión de NeoPOS desde GitHub...")
+            # 2. Deploy NeoPOS. The production package is embedded in the
+            # installer; downloading is only a compatibility fallback for old
+            # executables built before the package was bundled.
+            update_status("Preparando la build de producción de NeoPOS...")
 
             install_dir = os.path.join(os.path.expanduser("~"), "NeoPOS")
-            zip_path = os.path.join(os.environ.get("TEMP", "/tmp"), "neopos-local.zip")
-            self.check_update_before_download(install_dir)
-            if os.path.exists(zip_path):
-                os.remove(zip_path)
+            bundled_release = self.find_bundled_release()
+            bundled_manifest = None
+            if bundled_release:
+                self.validate_release_file(bundled_release)
+                bundled_manifest = self.read_manifest_from_archive(bundled_release)
+                self.after(0, lambda: self.append_log(
+                    f"[+] Build de producción incluida en el instalador: {bundled_release}"
+                ))
+            self.check_update_before_download(install_dir, bundled_manifest)
 
-            try:
-                urllib.request.urlretrieve(NEOPOS_LOCAL_RELEASE_URL, zip_path)
-            except Exception as error:
-                raise RuntimeError(
-                    "No se pudo descargar NeoPOS Local desde la release pública. "
-                    f"URL: {NEOPOS_LOCAL_RELEASE_URL}. Motivo: {error}"
-                ) from error
+            release_path = bundled_release
+            temporary_release = None
+            if release_path is None:
+                update_status("Descargando build de producción desde GitHub...")
+                temporary_release = os.path.join(
+                    os.environ.get("TEMP", tempfile.gettempdir()),
+                    "neopos-local.zip",
+                )
+                if os.path.exists(temporary_release):
+                    os.remove(temporary_release)
+                try:
+                    urllib.request.urlretrieve(NEOPOS_LOCAL_RELEASE_URL, temporary_release)
+                except Exception as error:
+                    raise RuntimeError(
+                        "No se pudo obtener la build de producción de NeoPOS. "
+                        f"URL: {NEOPOS_LOCAL_RELEASE_URL}. Motivo: {error}"
+                    ) from error
+                release_path = temporary_release
 
-            update_status("Descomprimiendo archivos en la carpeta del usuario...")
+            self.validate_release_file(release_path)
+            update_status("Descomprimiendo la build de producción...")
             os.makedirs(install_dir, exist_ok=True)
             self.install_dir = install_dir
-            with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                install_root = os.path.abspath(install_dir) + os.sep
-                for member in zip_ref.infolist():
-                    member_path = os.path.abspath(os.path.join(install_dir, member.filename))
-                    if not member_path.startswith(install_root):
-                        raise RuntimeError("El paquete descargado contiene una ruta inválida.")
+            with zipfile.ZipFile(release_path, "r") as zip_ref:
+                self.validate_release_zip(zip_ref, os.path.basename(release_path))
                 self.prepare_update(install_dir, zip_ref)
-                zip_ref.extractall(install_dir)
+                with tempfile.TemporaryDirectory(prefix="neopos-release-") as extraction_dir:
+                    zip_ref.extractall(extraction_dir)
+                    self.validate_extracted_release(extraction_dir)
+                    shutil.copytree(extraction_dir, install_dir, dirs_exist_ok=True)
+            self.validate_extracted_release(install_dir)
+            self.ensure_runtime_environment(install_dir)
+            if temporary_release and os.path.exists(temporary_release):
+                os.remove(temporary_release)
             self.after(0, lambda: self.append_log(f"[+] Archivos extraídos en: {install_dir}"))
             self.ensure_release_images(docker_cli, install_dir)
             
@@ -996,6 +1262,7 @@ WantedBy=multi-user.target
             if not docker_cli:
                 raise RuntimeError("No se encontró Docker. Usa primero el botón de instalación.")
             self.ensure_docker_ready(docker_cli)
+            self.ensure_runtime_environment(install_dir)
             self.ensure_release_images(docker_cli, install_dir)
 
             if platform.system() == "Windows":
@@ -1053,9 +1320,18 @@ WantedBy=multi-user.target
     def finish_installation(self):
         self.task_running = False
         self.progressbar.stop()
+        credentials_file = os.path.join(
+            os.path.expanduser("~"), "NeoPOS", "admin-credentials.txt"
+        )
+        credentials_hint = (
+            f"\n\nCredenciales iniciales: {credentials_file}"
+            if os.path.exists(credentials_file)
+            else ""
+        )
         messagebox.showinfo(
             "NeoPOS instalado",
-            "Instalación completa. NeoPOS Local está disponible en http://localhost:5173.",
+            "Instalación completa. NeoPOS Local está disponible en http://localhost:5173."
+            + credentials_hint,
         )
         webbrowser.open("http://localhost:5173")
         self.destroy()

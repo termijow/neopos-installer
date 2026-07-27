@@ -13,12 +13,64 @@ from pathlib import Path
 REQUIRED_MEMBERS = {
     "start.ps1",
     "docker-compose.yml",
+    "Abrir_NeoPOS.bat",
+    "init.sql",
     "local/backend/.env.example",
     "release-images.json",
     "images/api.tar",
     "images/printer.tar",
     "images/frontend.tar",
 }
+FORBIDDEN_SUFFIXES = (".go", ".ts", ".tsx", ".js", ".jsx", "Dockerfile", ".env")
+
+
+def validate_source_free_archive(archive: zipfile.ZipFile) -> None:
+    members = set()
+    for info in archive.infolist():
+        name = info.filename.replace("\\", "/")
+        if not name or name.endswith("/"):
+            continue
+        parts = name.split("/")
+        if name.startswith("/") or any(part in {"", ".", ".."} for part in parts):
+            raise RuntimeError(f"El paquete contiene una ruta inválida: {info.filename}")
+        mode = (info.external_attr >> 16) & 0o170000
+        if mode == 0o120000:
+            raise RuntimeError(f"El paquete contiene un enlace simbólico no permitido: {name}")
+        members.add(name)
+
+    missing = REQUIRED_MEMBERS - members
+    if missing:
+        missing_text = ", ".join(sorted(missing))
+        raise RuntimeError(f"El paquete NeoPOS Local está incompleto: {missing_text}")
+
+    forbidden = sorted(
+        name
+        for name in members
+        if name.endswith(FORBIDDEN_SUFFIXES)
+        or name.startswith((".git/", "local/backend/internal/", "local/frontend/src/"))
+    )
+    if forbidden:
+        raise RuntimeError(
+            "El paquete contiene código fuente o secretos: " + ", ".join(forbidden[:12])
+        )
+
+    try:
+        manifest = json.loads(archive.read("release-images.json").decode("utf-8"))
+    except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"No se pudo leer release-images.json: {error}") from error
+    images = manifest.get("images") if isinstance(manifest, dict) else None
+    if not isinstance(images, list) or not images:
+        raise RuntimeError("release-images.json no contiene imágenes de producción.")
+    for image in images:
+        if not isinstance(image, dict) or not image.get("name"):
+            raise RuntimeError("release-images.json contiene una imagen incompleta.")
+        image_path = str(image.get("archive", "")).replace("\\", "/")
+        if image_path.startswith("/") or ".." in image_path.split("/") or image_path not in members:
+            raise RuntimeError(f"No se encontró la imagen declarada: {image_path}")
+
+    corrupt_member = archive.testzip()
+    if corrupt_member is not None:
+        raise RuntimeError(f"El ZIP está corrupto: {corrupt_member}")
 
 
 def build_manifest(archive: zipfile.ZipFile, version: str) -> dict:
@@ -39,11 +91,7 @@ def build_manifest(archive: zipfile.ZipFile, version: str) -> dict:
 
 def stamp_archive(archive_path: Path, manifest_path: Path, version: str) -> None:
     with zipfile.ZipFile(archive_path, "r") as source:
-        members = {info.filename for info in source.infolist()}
-        missing = REQUIRED_MEMBERS - members
-        if missing:
-            missing_text = ", ".join(sorted(missing))
-            raise RuntimeError(f"El paquete NeoPOS Local está incompleto: {missing_text}")
+        validate_source_free_archive(source)
 
         manifest = build_manifest(source, version)
         archive_directory = archive_path.parent

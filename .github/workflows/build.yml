@@ -19,8 +19,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         pip install customtkinter
+    - name: Validate and stamp production package
+      env:
+        RELEASE_VERSION: ${{ github.ref_name }}
+      run: python scripts/stamp_neopos_release.py neopos-local.zip neopos-local-manifest.json
     - name: Build with PyInstaller
-      run: python -m PyInstaller --clean --onefile --windowed --name "NeoPOS-Installer-${{ github.ref_name }}" main.py
+      run: python -m PyInstaller --clean --onefile --windowed --add-data "neopos-local.zip;." --name "NeoPOS-Installer-${{ github.ref_name }}" main.py
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -40,8 +44,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         pip install customtkinter
+    - name: Validate and stamp production package
+      env:
+        RELEASE_VERSION: ${{ github.ref_name }}
+      run: python scripts/stamp_neopos_release.py neopos-local.zip neopos-local-manifest.json
     - name: Build with PyInstaller
-      run: python -m PyInstaller --clean --onefile --windowed --name "NeoPOS-Installer-Linux-${{ github.ref_name }}" main.py
+      run: python -m PyInstaller --clean --onefile --windowed --add-data "neopos-local.zip:." --name "NeoPOS-Installer-Linux-${{ github.ref_name }}" main.py
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:

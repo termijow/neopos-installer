@@ -3,7 +3,9 @@
 Este repositorio publica el instalador de NeoPOS Local. El código fuente de
 NeoPOS Local permanece en su repositorio privado; el paquete público contiene
 solamente imágenes Docker de producción, archivos de ejecución y configuración
-de ejemplo.
+de ejemplo. El ejecutable publicado lleva el ZIP de producción embebido, así
+que una instalación nueva no depende de descargar la build después de instalar
+Docker.
 
 ## Repositorios
 
@@ -134,8 +136,9 @@ https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Ins
 
 ## Qué ocurre en el equipo del cliente
 
-El instalador descarga el ZIP, carga las imágenes Docker con `docker load`,
-crea `.env` desde `.env.example` si todavía no existe y ejecuta:
+El instalador usa primero el ZIP embebido (y solo usa la descarga como respaldo
+para ejecutables antiguos), carga las imágenes Docker con `docker load`, crea
+los archivos de runtime si todavía no existen y ejecuta:
 
 ```text
 docker compose -p neopos-local up -d --remove-orphans
@@ -144,6 +147,12 @@ docker compose -p neopos-local up -d --remove-orphans
 No compila Go ni npm en el equipo del cliente y no necesita el código fuente.
 Los contenedores mantienen `restart: unless-stopped`, y una tarea de Windows
 vuelve a levantar NeoPOS al iniciar sesión.
+
+En una instalación nueva, el instalador verifica que existan las tres imágenes
+de producción y la carpeta `local/backend` antes de iniciar Compose. También
+genera secretos locales para PostgreSQL, MinIO, JWT y las cuentas iniciales; la
+contraseña del administrador queda temporalmente en `NeoPOS/admin-credentials.txt`.
+Los puertos se publican únicamente en `127.0.0.1`.
 
 Las actualizaciones conservan el volumen de PostgreSQL, crean un respaldo antes
 de reemplazar archivos y consultan `neopos-local-manifest.json` antes de bajar el
@@ -157,3 +166,9 @@ manifiesto para pedir confirmación.
 - Si una credencial real estuvo alguna vez en un archivo publicado, debe
   revocarse y reemplazarse aunque el archivo ya haya sido corregido.
 - Revisar el contenido del ZIP antes de publicar cada release.
+- El backend se compila con `-trimpath`, sin símbolos de depuración y sin código
+  fuente; el frontend se minifica y no publica sourcemaps.
+- Esto reduce la ingeniería inversa, pero no puede impedirla por completo: todo
+  código que se ejecuta en el equipo del cliente puede ser inspeccionado. La
+  lógica verdaderamente confidencial, las claves de proveedores y las reglas de
+  licencia deben permanecer en `neopos-cloud`.
