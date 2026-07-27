@@ -4,7 +4,7 @@ echo NeoPOS Installer - Windows Builder
 echo ===================================
 
 set "VERSION=%~1"
-if "%VERSION%"=="" set VERSION=v0.1.8
+if "%VERSION%"=="" set VERSION=v0.1.13
 echo Version del instalador: %VERSION%
 
 echo Instalando dependencias necesarias (pyinstaller, customtkinter)...

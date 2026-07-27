@@ -154,6 +154,10 @@ genera secretos locales para PostgreSQL, MinIO, JWT y las cuentas iniciales; la
 contraseña del administrador queda temporalmente en `NeoPOS/admin-credentials.txt`.
 Los puertos se publican únicamente en `127.0.0.1`.
 
+La comprobación de virtualización en Windows es únicamente informativa: si
+PowerShell no puede leerla o la reporta como desactivada, el instalador muestra
+un aviso y permite que Docker valide por sí mismo si puede iniciar.
+
 Las actualizaciones conservan el volumen de PostgreSQL, crean un respaldo antes
 de reemplazar archivos y consultan `neopos-local-manifest.json` antes de bajar el
 ZIP completo. Los cambios incompatibles deben marcarse como `breaking` en el

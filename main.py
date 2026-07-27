@@ -618,7 +618,7 @@ WantedBy=multi-user.target
         ))
 
     def verify_windows_virtualization(self):
-        """Fail early with a useful message when BIOS virtualization is disabled."""
+        """Warn about virtualization without blocking Docker's own validation."""
         if platform.system() != "Windows":
             return
 
@@ -634,16 +634,16 @@ WantedBy=multi-user.target
         )
         value = result.stdout.strip().lower()
         if result.returncode == 0 and value in {"false", "no"}:
-            raise RuntimeError(
-                "Este equipo no tiene activada la virtualización de hardware.\n\n"
-                "Antes de instalar NeoPOS, reinicia el equipo y activa en BIOS/UEFI "
-                "Intel Virtualization Technology (VT-x) o AMD SVM/AMD-V.\n\n"
-                "Después guarda los cambios, inicia Windows y vuelve a ejecutar el instalador."
-            )
+            self.after(0, lambda: self.append_log(
+                "[WARN] Windows reporta que no pudo confirmar la virtualización de hardware. "
+                "La instalación continuará y Docker validará si puede iniciar realmente."
+            ))
+            return
 
         if result.returncode != 0 or value not in {"true", "yes"}:
             self.after(0, lambda: self.append_log(
-                "[!] No se pudo confirmar el estado de virtualización; Docker validará el requisito."
+                "[WARN] No se pudo confirmar el estado de virtualización; "
+                "la instalación continuará y Docker validará el requisito."
             ))
 
     def find_docker_cli(self):
