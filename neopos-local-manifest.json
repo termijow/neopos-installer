@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "app_version": "v0.1.16",
+  "app_version": "v0.1.17",
   "database_migration": "additive",
   "breaking_changes": false,
   "release_notes": "Cambios compatibles y migraciones aditivas.",

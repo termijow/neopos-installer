@@ -163,7 +163,17 @@ La release también publica `NeoPOS-Uninstaller.exe`. El modo normal retira los
 contenedores, la tarea de inicio y las imágenes de NeoPOS, pero conserva la BD.
 La casilla de borrado elimina además los volúmenes PostgreSQL/MinIO, la
 configuración y los respaldos locales. Docker Desktop/Engine y recursos de
-otros proyectos no se eliminan.
+otros proyectos no se eliminan por defecto.
+
+El desinstalador ofrece una opción separada para quitar Docker Desktop/Engine.
+Solo debe marcarse si el equipo no usa Docker para ningún otro proyecto: esa
+opción limpia todos los contenedores, imágenes y volúmenes Docker globales
+antes de desinstalar Docker.
+
+La licencia ya no se solicita durante la instalación de Docker. Al abrir
+NeoPOS Local por primera vez, la pantalla de activación solicita el correo y
+la contraseña de NeoPOS Cloud, el código de licencia, la empresa y la sede; la
+activación validada queda guardada en la base de datos local.
 
 El instalador Windows solicita permisos de administrador mediante UAC desde el
 inicio. Esto permite crear la tarea de recuperación automática de NeoPOS sin

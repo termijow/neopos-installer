@@ -71,6 +71,8 @@ class NeoPOSInstaller(ctk.CTk):
         )
         self.logs_visible = True
         self.task_running = False
+        # Kept only for compatibility with installers built from an older
+        # flow. Current installations activate from NeoPOS Local after startup.
         self.activation_payload = None
 
         self.title("NeoPOS Installer")
@@ -261,7 +263,13 @@ class NeoPOSInstaller(ctk.CTk):
             self.append_log(f"[ERROR] No se pudo abrir la carpeta de logs: {error}")
 
     def ask_activation_payload(self):
-        """Collect and pre-validate Cloud credentials before installing Local."""
+        """Legacy activation dialog kept for compatibility with old callers.
+
+        New installations activate from NeoPOS Local after the services are
+        ready. Keeping this method isolated avoids asking for Cloud secrets in
+        the installer itself, which also makes the installer independent from
+        the Cloud onboarding endpoint.
+        """
         dialog = ctk.CTkToplevel(self)
         dialog.title("Activar NeoPOS")
         dialog.geometry("560x610")
@@ -1281,11 +1289,6 @@ WantedBy=multi-user.target
 
             self.ensure_docker_ready(docker_cli)
 
-            if not self.activation_payload:
-                raise RuntimeError("No se proporcionaron las credenciales de NeoPOS Cloud y la licencia.")
-            update_status("Validando cuenta, licencia y sucursal en NeoPOS Cloud...")
-            self.validate_cloud_activation(self.activation_payload)
-
             # 2. Deploy NeoPOS. The production package is embedded in the
             # installer; downloading is only a compatibility fallback for old
             # executables built before the package was bundled.
@@ -1380,10 +1383,6 @@ WantedBy=multi-user.target
                     docker_cli,
                     os.path.join(install_dir, "docker-compose.yml"),
                 )
-                update_status("Guardando activación y administradores Cloud en NeoPOS Local...")
-                self.activate_local_license(self.activation_payload)
-                self.update_credentials_note(install_dir, self.activation_payload)
-
                 self.after(0, lambda: self.append_log("[*] Configurando recuperación automática de servicios..."))
                 self.register_windows_autostart(install_dir)
                 
@@ -1412,9 +1411,6 @@ WantedBy=multi-user.target
                     "sudo", "docker", "compose", "-f",
                     os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--remove-orphans",
                 ], check=True)
-                update_status("Guardando activación y administradores Cloud en NeoPOS Local...")
-                self.activate_local_license(self.activation_payload)
-                self.update_credentials_note(install_dir, self.activation_payload)
                 self.after(0, lambda: self.append_log("[*] Configurando inicio automático en Linux..."))
                 self.register_linux_autostart(install_dir)
             else:
@@ -1436,8 +1432,6 @@ WantedBy=multi-user.target
             "Se instalarán o actualizarán Docker y todos los servicios de NeoPOS Local. ¿Continuar?",
         )
         if response:
-            if not self.ask_activation_payload():
-                return
             self.show_progress()
             threading.Thread(target=self.run_installation_task, args=("Desktop App",), daemon=True).start()
 
@@ -1447,8 +1441,6 @@ WantedBy=multi-user.target
             "Se instalarán o actualizarán Docker y todos los servicios de NeoPOS Local. ¿Continuar?",
         )
         if response:
-            if not self.ask_activation_payload():
-                return
             self.show_progress()
             threading.Thread(target=self.run_installation_task, args=("Web App",), daemon=True).start()
 
@@ -1459,8 +1451,6 @@ WantedBy=multi-user.target
             "los servicios en modo producción. ¿Continuar?",
         )
         if response:
-            if not self.ask_activation_payload():
-                return
             self.show_progress()
             threading.Thread(target=self.run_services_task, daemon=True).start()
 
@@ -1486,10 +1476,6 @@ WantedBy=multi-user.target
             if not docker_cli:
                 raise RuntimeError("No se encontró Docker. Usa primero el botón de instalación.")
             self.ensure_docker_ready(docker_cli)
-            if not self.activation_payload:
-                raise RuntimeError("No se proporcionaron las credenciales de NeoPOS Cloud y la licencia.")
-            update_status("Validando cuenta, licencia y sucursal en NeoPOS Cloud...")
-            self.validate_cloud_activation(self.activation_payload)
             self.ensure_runtime_environment(install_dir)
             self.ensure_release_images(docker_cli, install_dir)
 
@@ -1524,9 +1510,6 @@ WantedBy=multi-user.target
                         "Revisa los logs para ver la salida completa."
                     )
                 self.wait_for_local_services(docker_cli, compose_file)
-                update_status("Guardando activación y administradores Cloud en NeoPOS Local...")
-                self.activate_local_license(self.activation_payload)
-                self.update_credentials_note(install_dir, self.activation_payload)
                 self.register_windows_autostart(install_dir)
             elif platform.system() == "Linux":
                 update_status("Construyendo e iniciando los servicios locales...")
@@ -1537,9 +1520,6 @@ WantedBy=multi-user.target
                     ],
                     check=True,
                 )
-                update_status("Guardando activación y administradores Cloud en NeoPOS Local...")
-                self.activate_local_license(self.activation_payload)
-                self.update_credentials_note(install_dir, self.activation_payload)
                 self.register_linux_autostart(install_dir)
             else:
                 raise RuntimeError(f"Sistema operativo no soportado: {platform.system()}")
@@ -1564,7 +1544,8 @@ WantedBy=multi-user.target
         )
         messagebox.showinfo(
             "NeoPOS instalado",
-            "Instalación completa. NeoPOS Local está disponible en http://localhost:5173."
+            "Instalación completa. NeoPOS Local está disponible en http://localhost:5173. "
+            "La licencia se activa dentro del programa, después de que los servicios estén listos."
             + credentials_hint,
         )
         webbrowser.open("http://localhost:5173")

@@ -1,8 +1,4 @@
-"""NeoPOS Local uninstaller.
-
-It removes only the NeoPOS Compose project. Docker Desktop/Engine is not
-uninstalled because it may be shared by other applications.
-"""
+"""NeoPOS Local uninstaller."""
 
 from __future__ import annotations
 
@@ -79,7 +75,66 @@ def remove_autostart() -> None:
             pass
 
 
-def uninstall(delete_data: bool, remove_images: bool) -> list[str]:
+def remove_docker_installation(cli: str | None) -> list[str]:
+    """Remove Docker itself only after the user explicitly opts in.
+
+    Docker is commonly shared by several projects, so this path is kept
+    separate from the normal NeoPOS cleanup and always reports what it could
+    remove. The prune command intentionally removes all Docker resources on
+    the machine, not only NeoPOS resources.
+    """
+    messages: list[str] = []
+    if cli:
+        ok, output = run([cli, "system", "prune", "--all", "--volumes", "--force"])
+        messages.append(
+            "Recursos globales de Docker eliminados."
+            if ok
+            else f"No se pudieron limpiar todos los recursos globales de Docker: {output}"
+        )
+
+    if platform.system() == "Windows":
+        candidates = [
+            Path(os.environ.get("ProgramFiles", "")) / "Docker" / "Docker" / "Docker Desktop.exe",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Docker" / "Docker" / "Docker Desktop.exe",
+        ]
+        executable = next((path for path in candidates if path.is_file()), None)
+        if executable is None:
+            messages.append("No se encontró el desinstalador de Docker Desktop.")
+        else:
+            ok, output = run([str(executable), "uninstall", "--quiet"])
+            messages.append(
+                "Docker Desktop desinstalado."
+                if ok
+                else f"Docker Desktop no pudo desinstalarse completamente: {output}"
+            )
+    elif platform.system() == "Linux":
+        run(["sudo", "systemctl", "disable", "--now", "docker", "docker.socket", "containerd"])
+        packages = [
+            "docker-ce",
+            "docker-ce-cli",
+            "containerd.io",
+            "docker-buildx-plugin",
+            "docker-compose-plugin",
+            "docker.io",
+            "docker-compose-v2",
+        ]
+        ok, output = run(["sudo", "apt-get", "purge", "-y", *packages])
+        messages.append(
+            "Paquetes de Docker desinstalados."
+            if ok
+            else f"No se pudieron desinstalar todos los paquetes de Docker: {output}"
+        )
+        ok, output = run(["sudo", "apt-get", "autoremove", "--purge", "-y"])
+        if not ok:
+            messages.append(f"No se pudo completar la limpieza de paquetes: {output}")
+    else:
+        messages.append(
+            f"La desinstalación automática de Docker no está implementada para {platform.system()}."
+        )
+    return messages
+
+
+def uninstall(delete_data: bool, remove_images: bool, remove_docker: bool = False) -> list[str]:
     messages: list[str] = []
     compose = INSTALL_DIR / "docker-compose.yml"
     cli = docker_cli()
@@ -105,11 +160,13 @@ def uninstall(delete_data: bool, remove_images: bool) -> list[str]:
             messages.append(f"No se pudo borrar toda la carpeta de NeoPOS: {error}")
     else:
         messages.append("Datos conservados. Solo se retiraron los servicios de NeoPOS.")
+    if remove_docker:
+        messages.extend(remove_docker_installation(cli))
     return messages
 
 
-def cli_main(delete_data: bool, remove_images: bool) -> int:
-    messages = uninstall(delete_data, remove_images)
+def cli_main(delete_data: bool, remove_images: bool, remove_docker: bool) -> int:
+    messages = uninstall(delete_data, remove_images, remove_docker)
     print("\n".join(messages))
     return 0 if not any("No se pudo" in message for message in messages) else 1
 
@@ -127,13 +184,15 @@ class Uninstaller(_TkBase):
         self.resizable(False, False)
         self.delete_data = tk.BooleanVar(value=False)
         self.remove_images = tk.BooleanVar(value=True)
+        self.remove_docker = tk.BooleanVar(value=False)
         frame = ttk.Frame(self, padding=24)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="Desinstalar NeoPOS Local", font=("Segoe UI", 18, "bold")).pack(pady=(0, 12))
         ttk.Label(frame, text="Se eliminarán los contenedores, la tarea de inicio automático y la configuración del proyecto.", wraplength=500).pack(anchor="w")
         ttk.Checkbutton(frame, text="Eliminar también la BD, volúmenes, respaldos y datos locales", variable=self.delete_data).pack(anchor="w", pady=(22, 4))
         ttk.Checkbutton(frame, text="Eliminar imágenes Docker de NeoPOS", variable=self.remove_images).pack(anchor="w", pady=4)
-        ttk.Label(frame, text="Docker Desktop/Engine no se desinstala porque puede ser usado por otros programas.", foreground="#8a5a00", wraplength=500).pack(anchor="w", pady=14)
+        ttk.Checkbutton(frame, text="Desinstalar Docker Desktop/Engine y limpiar todos sus recursos", variable=self.remove_docker).pack(anchor="w", pady=4)
+        ttk.Label(frame, text="Docker se conserva por defecto. Si marcas la opción anterior, también se eliminarán imágenes, contenedores y volúmenes de otros proyectos Docker.", foreground="#8a5a00", wraplength=500).pack(anchor="w", pady=14)
         self.status = ttk.Label(frame, text="", wraplength=500)
         self.status.pack(anchor="w", pady=5)
         ttk.Button(frame, text="Desinstalar", command=self.confirm).pack(side="right", pady=16)
@@ -142,11 +201,17 @@ class Uninstaller(_TkBase):
     def confirm(self) -> None:
         if self.delete_data.get() and not messagebox.askyesno("Confirmar borrado", "Esto eliminará la BD y los datos locales de NeoPOS. Esta acción no se puede deshacer. ¿Continuar?", parent=self):
             return
+        if self.remove_docker.get() and not messagebox.askyesno(
+            "Confirmar eliminación de Docker",
+            "Esto desinstalará Docker Desktop/Engine y eliminará TODOS los contenedores, imágenes y volúmenes Docker del equipo, incluidos los de otros proyectos. ¿Continuar?",
+            parent=self,
+        ):
+            return
         if not self.delete_data.get() and not messagebox.askyesno("Confirmar desinstalación", "¿Detener y retirar NeoPOS conservando los datos?", parent=self):
             return
         self.status.configure(text="Desinstalando...", foreground="#334155")
         self.update_idletasks()
-        messages = uninstall(self.delete_data.get(), self.remove_images.get())
+        messages = uninstall(self.delete_data.get(), self.remove_images.get(), self.remove_docker.get())
         self.status.configure(text="\n".join(messages), foreground="#166534")
         messagebox.showinfo("NeoPOS desinstalado", "\n".join(messages), parent=self)
         self.destroy()
@@ -156,10 +221,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--delete-data", action="store_true")
     parser.add_argument("--remove-images", action="store_true")
+    parser.add_argument("--remove-docker", action="store_true")
     parser.add_argument("--cli", action="store_true")
     args = parser.parse_args()
     if args.cli:
-        return cli_main(args.delete_data, args.remove_images)
+        return cli_main(args.delete_data, args.remove_images, args.remove_docker)
     app = Uninstaller()
     app.mainloop()
     return 0
