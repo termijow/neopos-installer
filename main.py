@@ -29,6 +29,7 @@ LOCAL_FRONTEND_URL = "http://127.0.0.1:5173"
 DOCKER_READY_TIMEOUT_SECONDS = 180
 LOCAL_SERVICES_READY_TIMEOUT_SECONDS = 180
 BUNDLED_RELEASE_FILENAME = "neopos-local.zip"
+DEFAULT_CLOUD_URL = "https://api-neopos-cloud.prismabitetesting.xyz"
 REQUIRED_RELEASE_MEMBERS = {
     "start.ps1",
     "docker-compose.yml",
@@ -70,6 +71,7 @@ class NeoPOSInstaller(ctk.CTk):
         )
         self.logs_visible = True
         self.task_running = False
+        self.activation_payload = None
 
         self.title("NeoPOS Installer")
         self.geometry("820x500")
@@ -257,6 +259,139 @@ class NeoPOSInstaller(ctk.CTk):
                 subprocess.Popen(["xdg-open", directory])
         except (OSError, AttributeError) as error:
             self.append_log(f"[ERROR] No se pudo abrir la carpeta de logs: {error}")
+
+    def ask_activation_payload(self):
+        """Collect and pre-validate Cloud credentials before installing Local."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Activar NeoPOS")
+        dialog.geometry("560x610")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(dialog, text="Cuenta de NeoPOS Cloud", font=ctk.CTkFont(size=22, weight="bold")).grid(row=0, column=0, padx=28, pady=(24, 6))
+        ctk.CTkLabel(dialog, text="Primero valida tu cuenta. Después podrás reclamar la licencia para esta sede.", wraplength=480, text_color="gray").grid(row=1, column=0, padx=28, pady=(0, 18))
+        email = ctk.CTkEntry(dialog, placeholder_text="Correo de NeoPOS Cloud", width=460)
+        email.grid(row=2, column=0, padx=28, pady=7)
+        password = ctk.CTkEntry(dialog, placeholder_text="Contraseña de NeoPOS Cloud", show="*", width=460)
+        password.grid(row=3, column=0, padx=28, pady=7)
+        account_status = ctk.CTkLabel(dialog, text="Cuenta pendiente de validar", text_color="#d97706")
+        account_status.grid(row=4, column=0, padx=28, pady=(2, 8))
+
+        license_key = ctk.CTkEntry(dialog, placeholder_text="Licencia", width=460, state="disabled")
+        license_key.grid(row=5, column=0, padx=28, pady=7)
+        business_name = ctk.CTkEntry(dialog, placeholder_text="Nombre de la empresa", width=460, state="disabled")
+        business_name.grid(row=6, column=0, padx=28, pady=7)
+        branch_name = ctk.CTkEntry(dialog, placeholder_text="Nombre de la sede", width=460, state="disabled")
+        branch_name.grid(row=7, column=0, padx=28, pady=7)
+
+        result = {"payload": None}
+        cloud_url = os.environ.get("NEOPOS_CLOUD_URL", DEFAULT_CLOUD_URL).rstrip("/")
+
+        def validate_account():
+            account_email = email.get().strip().lower()
+            account_password = password.get()
+            if not account_email or not account_password:
+                messagebox.showwarning("Datos faltantes", "Escribe el correo y la contraseña de NeoPOS Cloud.", parent=dialog)
+                return
+            try:
+                body = json.dumps({"email": account_email, "password": account_password}).encode("utf-8")
+                request = urllib.request.Request(
+                    cloud_url + "/api/v1/auth/validate", data=body,
+                    headers={"Content-Type": "application/json"}, method="POST"
+                )
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    validation = json.loads(response.read().decode("utf-8"))
+                if not validation.get("valid"):
+                    raise RuntimeError(validation.get("error", "Las credenciales no son válidas."))
+                account_status.configure(text="Cuenta validada. Completa los datos de la sucursal.", text_color="#16a34a")
+                for field in (license_key, business_name, branch_name):
+                    field.configure(state="normal")
+                validate_button.configure(state="disabled")
+            except Exception as error:
+                account_status.configure(text="No se pudo validar la cuenta", text_color="#dc2626")
+                messagebox.showerror("Cuenta no válida", str(error), parent=dialog)
+
+        def submit():
+            values = (license_key.get().strip(), business_name.get().strip(), branch_name.get().strip())
+            if any(not value for value in values):
+                messagebox.showwarning("Datos faltantes", "Completa la licencia, empresa y sede.", parent=dialog)
+                return
+            if str(validate_button.cget("state")) != "disabled":
+                messagebox.showwarning("Cuenta pendiente", "Valida primero la cuenta de NeoPOS Cloud.", parent=dialog)
+                return
+            result["payload"] = {
+                "license_key": values[0], "email": email.get().strip().lower(),
+                "password": password.get(), "business_name": values[1], "branch_name": values[2],
+                "cloud_url": cloud_url,
+            }
+            dialog.destroy()
+
+        validate_button = ctk.CTkButton(dialog, text="Validar cuenta Cloud", command=validate_account)
+        validate_button.grid(row=8, column=0, padx=28, pady=(12, 7), sticky="ew")
+        submit_button = ctk.CTkButton(dialog, text="Continuar con la instalación", command=submit, state="normal")
+        submit_button.grid(row=9, column=0, padx=28, pady=(7, 24), sticky="ew")
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        self.wait_window(dialog)
+        self.activation_payload = result["payload"]
+        return self.activation_payload
+
+    def validate_cloud_activation(self, payload):
+        body = json.dumps({key: value for key, value in payload.items() if key != "cloud_url"}).encode("utf-8")
+        request = urllib.request.Request(
+            payload["cloud_url"] + "/api/v1/licenses/activate", data=body,
+            headers={"Content-Type": "application/json"}, method="POST"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            details = error.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"NeoPOS Cloud rechazó la activación: {details}") from error
+        except Exception as error:
+            raise RuntimeError(f"No se pudo contactar a NeoPOS Cloud: {error}") from error
+        if not result.get("valid"):
+            raise RuntimeError(result.get("error", "La licencia no es válida para esta cuenta o sede."))
+        self.after(0, lambda: self.append_log("[+] Cuenta, empresa, sede y licencia validadas en NeoPOS Cloud."))
+        return result
+
+    def activate_local_license(self, payload):
+        body = json.dumps({key: value for key, value in payload.items() if key != "cloud_url"}).encode("utf-8")
+        request = urllib.request.Request(
+            "http://127.0.0.1:8080/api/v1/license/activate", data=body,
+            headers={"Content-Type": "application/json"}, method="POST"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            details = error.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"NeoPOS Local no pudo guardar la activación: {details}") from error
+        if response.status < 200 or response.status >= 300:
+            raise RuntimeError(f"NeoPOS Local respondió HTTP {response.status}")
+        if isinstance(result, dict) and isinstance(result.get("data"), dict) and not result["data"].get("valid", True):
+            raise RuntimeError(result["data"].get("message", "NeoPOS Local rechazó la licencia."))
+        self.after(0, lambda: self.append_log("[+] Licencia y administradores de Cloud guardados en la base local."))
+
+    def update_credentials_note(self, install_dir, payload):
+        """Keep the cashier secret in the requested file without duplicating
+        the Cloud password on disk."""
+        backend_env = os.path.join(install_dir, "local", "backend", ".env")
+        values = self._read_env_file(backend_env)
+        credentials_path = os.path.join(install_dir, "admin-credentials.txt")
+        with open(credentials_path, "w", encoding="utf-8", newline="\n") as credentials:
+            credentials.write(
+                "NeoPOS Local - credenciales de la instalación\n"
+                f"Administrador Cloud: {payload['email']}\n"
+                "Contraseña de administrador: usa la contraseña validada de NeoPOS Cloud; no se guarda en texto plano.\n\n"
+                f"Cajero: {values.get('CASHIER_EMAIL', 'cajero@neopos.com')}\n"
+                f"Contraseña: {values.get('CASHIER_PASSWORD', '')}\n\n"
+                "Guarda este archivo en un lugar seguro y elimínalo cuando cambies la contraseña.\n"
+            )
+        try:
+            os.chmod(credentials_path, 0o600)
+        except OSError:
+            pass
 
     def run_streaming_process(self, command, cwd=None, env=None):
         """Run a process while forwarding stdout/stderr to the visible log."""
@@ -457,7 +592,8 @@ class NeoPOSInstaller(ctk.CTk):
             minio_password = "password123" if legacy_install else secrets.token_hex(32)
             self._write_env_value(root_env, "MINIO_ROOT_PASSWORD", minio_password)
 
-        if not os.path.exists(backend_env):
+        backend_is_new = not os.path.exists(backend_env)
+        if backend_is_new:
             example_path = os.path.join(backend_dir, ".env.example")
             if not os.path.isfile(example_path):
                 raise RuntimeError(
@@ -479,20 +615,6 @@ class NeoPOSInstaller(ctk.CTk):
             self._write_env_value(backend_env, "MINIO_ROOT_USER", minio_user)
             self._write_env_value(backend_env, "MINIO_ROOT_PASSWORD", minio_password)
 
-            credentials_path = os.path.join(install_dir, "admin-credentials.txt")
-            with open(credentials_path, "w", encoding="utf-8", newline="\n") as credentials:
-                credentials.write(
-                    "NeoPOS Local - credenciales iniciales\n"
-                    f"Administrador: {self._read_env_file(backend_env).get('ADMIN_EMAIL', 'admin@pos.local')}\n"
-                    f"Contraseña: {admin_password}\n\n"
-                    f"Cajero: {self._read_env_file(backend_env).get('CASHIER_EMAIL', 'cajero@neopos.com')}\n"
-                    f"Contraseña: {cashier_password}\n\n"
-                    "Guarda este archivo en un lugar seguro y elimínalo cuando cambies la contraseña.\n"
-                )
-            try:
-                os.chmod(credentials_path, 0o600)
-            except OSError:
-                pass
         else:
             backend_values = self._read_env_file(backend_env)
             self._write_env_value(
@@ -505,6 +627,37 @@ class NeoPOSInstaller(ctk.CTk):
                 "MINIO_ROOT_PASSWORD",
                 backend_values.get("MINIO_ROOT_PASSWORD") or minio_password,
             )
+
+        # Repair legacy installations created by older installers. Existing
+        # non-placeholder passwords are preserved so a package update cannot
+        # invalidate the current administrator or cashier account.
+        backend_values = self._read_env_file(backend_env)
+        for key, size in (("ADMIN_PASSWORD", 24), ("CASHIER_PASSWORD", 24)):
+            current = backend_values.get(key, "").strip()
+            if not current or current.startswith("GENERATED_"):
+                current = secrets.token_hex(size)
+                self._write_env_value(backend_env, key, current)
+                backend_values[key] = current
+        for key, fallback in (("ADMIN_EMAIL", "admin@pos.local"), ("CASHIER_EMAIL", "cajero@neopos.com")):
+            if not backend_values.get(key, "").strip():
+                self._write_env_value(backend_env, key, fallback)
+                backend_values[key] = fallback
+
+        credentials_path = os.path.join(install_dir, "admin-credentials.txt")
+        if not os.path.exists(credentials_path):
+            with open(credentials_path, "w", encoding="utf-8", newline="\n") as credentials:
+                credentials.write(
+                    "NeoPOS Local - credenciales iniciales\n"
+                    f"Administrador: {backend_values.get('ADMIN_EMAIL', 'admin@pos.local')}\n"
+                    f"Contraseña: {backend_values['ADMIN_PASSWORD']}\n\n"
+                    f"Cajero: {backend_values.get('CASHIER_EMAIL', 'cajero@neopos.com')}\n"
+                    f"Contraseña: {backend_values['CASHIER_PASSWORD']}\n\n"
+                    "Guarda este archivo en un lugar seguro y elimínalo cuando cambies la contraseña.\n"
+                )
+            try:
+                os.chmod(credentials_path, 0o600)
+            except OSError:
+                pass
 
     def ensure_release_images(self, docker_cli, install_dir):
         """Load every bundled production image and fail clearly if one is missing."""
@@ -1128,6 +1281,11 @@ WantedBy=multi-user.target
 
             self.ensure_docker_ready(docker_cli)
 
+            if not self.activation_payload:
+                raise RuntimeError("No se proporcionaron las credenciales de NeoPOS Cloud y la licencia.")
+            update_status("Validando cuenta, licencia y sucursal en NeoPOS Cloud...")
+            self.validate_cloud_activation(self.activation_payload)
+
             # 2. Deploy NeoPOS. The production package is embedded in the
             # installer; downloading is only a compatibility fallback for old
             # executables built before the package was bundled.
@@ -1222,6 +1380,9 @@ WantedBy=multi-user.target
                     docker_cli,
                     os.path.join(install_dir, "docker-compose.yml"),
                 )
+                update_status("Guardando activación y administradores Cloud en NeoPOS Local...")
+                self.activate_local_license(self.activation_payload)
+                self.update_credentials_note(install_dir, self.activation_payload)
 
                 self.after(0, lambda: self.append_log("[*] Configurando recuperación automática de servicios..."))
                 self.register_windows_autostart(install_dir)
@@ -1251,6 +1412,9 @@ WantedBy=multi-user.target
                     "sudo", "docker", "compose", "-f",
                     os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--remove-orphans",
                 ], check=True)
+                update_status("Guardando activación y administradores Cloud en NeoPOS Local...")
+                self.activate_local_license(self.activation_payload)
+                self.update_credentials_note(install_dir, self.activation_payload)
                 self.after(0, lambda: self.append_log("[*] Configurando inicio automático en Linux..."))
                 self.register_linux_autostart(install_dir)
             else:
@@ -1272,6 +1436,8 @@ WantedBy=multi-user.target
             "Se instalarán o actualizarán Docker y todos los servicios de NeoPOS Local. ¿Continuar?",
         )
         if response:
+            if not self.ask_activation_payload():
+                return
             self.show_progress()
             threading.Thread(target=self.run_installation_task, args=("Desktop App",), daemon=True).start()
 
@@ -1281,6 +1447,8 @@ WantedBy=multi-user.target
             "Se instalarán o actualizarán Docker y todos los servicios de NeoPOS Local. ¿Continuar?",
         )
         if response:
+            if not self.ask_activation_payload():
+                return
             self.show_progress()
             threading.Thread(target=self.run_installation_task, args=("Web App",), daemon=True).start()
 
@@ -1291,6 +1459,8 @@ WantedBy=multi-user.target
             "los servicios en modo producción. ¿Continuar?",
         )
         if response:
+            if not self.ask_activation_payload():
+                return
             self.show_progress()
             threading.Thread(target=self.run_services_task, daemon=True).start()
 
@@ -1316,6 +1486,10 @@ WantedBy=multi-user.target
             if not docker_cli:
                 raise RuntimeError("No se encontró Docker. Usa primero el botón de instalación.")
             self.ensure_docker_ready(docker_cli)
+            if not self.activation_payload:
+                raise RuntimeError("No se proporcionaron las credenciales de NeoPOS Cloud y la licencia.")
+            update_status("Validando cuenta, licencia y sucursal en NeoPOS Cloud...")
+            self.validate_cloud_activation(self.activation_payload)
             self.ensure_runtime_environment(install_dir)
             self.ensure_release_images(docker_cli, install_dir)
 
@@ -1350,6 +1524,9 @@ WantedBy=multi-user.target
                         "Revisa los logs para ver la salida completa."
                     )
                 self.wait_for_local_services(docker_cli, compose_file)
+                update_status("Guardando activación y administradores Cloud en NeoPOS Local...")
+                self.activate_local_license(self.activation_payload)
+                self.update_credentials_note(install_dir, self.activation_payload)
                 self.register_windows_autostart(install_dir)
             elif platform.system() == "Linux":
                 update_status("Construyendo e iniciando los servicios locales...")
@@ -1360,6 +1537,9 @@ WantedBy=multi-user.target
                     ],
                     check=True,
                 )
+                update_status("Guardando activación y administradores Cloud en NeoPOS Local...")
+                self.activate_local_license(self.activation_payload)
+                self.update_credentials_note(install_dir, self.activation_payload)
                 self.register_linux_autostart(install_dir)
             else:
                 raise RuntimeError(f"Sistema operativo no soportado: {platform.system()}")

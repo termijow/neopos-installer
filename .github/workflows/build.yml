@@ -25,11 +25,15 @@ jobs:
       run: python scripts/stamp_neopos_release.py neopos-local.zip neopos-local-manifest.json
     - name: Build with PyInstaller
       run: python -m PyInstaller --clean --onefile --windowed --uac-admin --add-data "neopos-local.zip;." --name "NeoPOS-Installer-${{ github.ref_name }}" main.py
+    - name: Build uninstaller with PyInstaller
+      run: python -m PyInstaller --clean --onefile --windowed --uac-admin --name "NeoPOS-Uninstaller-${{ github.ref_name }}" uninstaller.py
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: windows-installer
-        path: dist/NeoPOS-Installer-${{ github.ref_name }}.exe
+        path: |
+          dist/NeoPOS-Installer-${{ github.ref_name }}.exe
+          dist/NeoPOS-Uninstaller-${{ github.ref_name }}.exe
 
   build-linux:
     runs-on: ubuntu-latest
@@ -50,11 +54,15 @@ jobs:
       run: python scripts/stamp_neopos_release.py neopos-local.zip neopos-local-manifest.json
     - name: Build with PyInstaller
       run: python -m PyInstaller --clean --onefile --windowed --add-data "neopos-local.zip:." --name "NeoPOS-Installer-Linux-${{ github.ref_name }}" main.py
+    - name: Build uninstaller with PyInstaller
+      run: python -m PyInstaller --clean --onefile --windowed --name "NeoPOS-Uninstaller-Linux-${{ github.ref_name }}" uninstaller.py
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: linux-installer
-        path: dist/NeoPOS-Installer-Linux-${{ github.ref_name }}
+        path: |
+          dist/NeoPOS-Installer-Linux-${{ github.ref_name }}
+          dist/NeoPOS-Uninstaller-Linux-${{ github.ref_name }}
 
   release:
     needs: [build-windows, build-linux]
@@ -78,7 +86,9 @@ jobs:
     - name: Keep stable download aliases
       run: |
         cp "release-files/NeoPOS-Installer-${GITHUB_REF_NAME}.exe" release-files/NeoPOS-Installer.exe
+        cp "release-files/NeoPOS-Uninstaller-${GITHUB_REF_NAME}.exe" release-files/NeoPOS-Uninstaller.exe
         cp "release-files/NeoPOS-Installer-Linux-${GITHUB_REF_NAME}" release-files/NeoPOS-Installer-Linux
+        cp "release-files/NeoPOS-Uninstaller-Linux-${GITHUB_REF_NAME}" release-files/NeoPOS-Uninstaller-Linux
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:

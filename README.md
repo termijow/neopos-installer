@@ -110,6 +110,7 @@ git push origin main v0.1.15
 El tag activa `.github/workflows/build.yml`. GitHub Actions:
 
 - compila el instalador Windows con PyInstaller;
+- compila el desinstalador Windows con una opción explícita para conservar o borrar los datos;
 - compila el instalador Linux;
 - valida el paquete NeoPOS Local;
 - publica nombres versionados, por ejemplo `NeoPOS-Installer-v0.1.10.exe`;
@@ -157,6 +158,12 @@ Los puertos se publican únicamente en `127.0.0.1`.
 La comprobación de virtualización en Windows es únicamente informativa: si
 PowerShell no puede leerla o la reporta como desactivada, el instalador muestra
 un aviso y permite que Docker valide por sí mismo si puede iniciar.
+
+La release también publica `NeoPOS-Uninstaller.exe`. El modo normal retira los
+contenedores, la tarea de inicio y las imágenes de NeoPOS, pero conserva la BD.
+La casilla de borrado elimina además los volúmenes PostgreSQL/MinIO, la
+configuración y los respaldos locales. Docker Desktop/Engine y recursos de
+otros proyectos no se eliminan.
 
 El instalador Windows solicita permisos de administrador mediante UAC desde el
 inicio. Esto permite crear la tarea de recuperación automática de NeoPOS sin

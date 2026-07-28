@@ -28,6 +28,12 @@ if errorlevel 1 (
     exit /b %errorlevel%
 )
 
+python -m PyInstaller --clean --onefile --windowed --uac-admin --name "NeoPOS-Uninstaller-%VERSION%" uninstaller.py
+if errorlevel 1 (
+    echo Error: PyInstaller no pudo compilar el desinstalador.
+    exit /b %errorlevel%
+)
+
 echo.
-echo Compilacion exitosa. Tu ejecutable esta en la carpeta "dist\NeoPOS-Installer-%VERSION%.exe".
+echo Compilacion exitosa. Los ejecutables estan en la carpeta "dist".
 pause
