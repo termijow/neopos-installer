@@ -1,13 +1,14 @@
 {
   "schema_version": 1,
-  "app_version": "v0.1.23",
+  "app_version": "v0.1.25",
   "database_migration": "additive",
   "breaking_changes": false,
   "release_notes": "Cambios compatibles y migraciones aditivas.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
-      "minio-data"
+      "minio-data",
+      "backup-data"
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   }
