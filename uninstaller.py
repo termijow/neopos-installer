@@ -31,7 +31,8 @@ def docker_cli() -> str | None:
         candidates.extend(
             [
                 os.path.join(os.environ.get("ProgramFiles", ""), "Docker", "Docker", "resources", "bin", "docker.exe"),
-                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Docker", "Docker", "resources", "bin", "docker.exe"),
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Docker", "resources", "bin", "docker.exe"),
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "DockerDesktop", "resources", "bin", "docker.exe"),
             ]
         )
     return next((candidate for candidate in candidates if candidate and Path(candidate).is_file()), None)
@@ -76,12 +77,11 @@ def remove_autostart() -> None:
 
 
 def remove_docker_installation(cli: str | None) -> list[str]:
-    """Remove Docker itself only after the user explicitly opts in.
+    """Remove Docker only when the user explicitly requests it.
 
-    Docker is commonly shared by several projects, so this path is kept
-    separate from the normal NeoPOS cleanup and always reports what it could
-    remove. The prune command intentionally removes all Docker resources on
-    the machine, not only NeoPOS resources.
+    Docker is shared by many applications. This path therefore remains
+    completely separate from the normal NeoPOS cleanup and warns that the
+    Docker uninstall also removes containers, images, and volumes globally.
     """
     messages: list[str] = []
     if cli:
@@ -93,15 +93,25 @@ def remove_docker_installation(cli: str | None) -> list[str]:
         )
 
     if platform.system() == "Windows":
+        # Docker's supported uninstaller is shipped separately from the
+        # desktop UI. The old implementation attempted to run Docker
+        # Desktop.exe, which only starts the application and does not uninstall
+        # Docker Desktop.
         candidates = [
-            Path(os.environ.get("ProgramFiles", "")) / "Docker" / "Docker" / "Docker Desktop.exe",
-            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Docker" / "Docker" / "Docker Desktop.exe",
+            Path(os.environ.get("ProgramFiles", ""))
+            / "Docker"
+            / "Docker"
+            / "Docker Desktop Installer.exe",
+            Path(os.environ.get("LOCALAPPDATA", ""))
+            / "Programs"
+            / "DockerDesktop"
+            / "Docker Desktop Installer.exe",
         ]
-        executable = next((path for path in candidates if path.is_file()), None)
-        if executable is None:
-            messages.append("No se encontró el desinstalador de Docker Desktop.")
+        installer = next((path for path in candidates if path.is_file()), None)
+        if installer is None:
+            messages.append("No se encontró el desinstalador oficial de Docker Desktop.")
         else:
-            ok, output = run([str(executable), "uninstall", "--quiet"])
+            ok, output = run([str(installer), "uninstall"])
             messages.append(
                 "Docker Desktop desinstalado."
                 if ok
@@ -110,6 +120,7 @@ def remove_docker_installation(cli: str | None) -> list[str]:
     elif platform.system() == "Linux":
         run(["sudo", "systemctl", "disable", "--now", "docker", "docker.socket", "containerd"])
         packages = [
+            "docker-desktop",
             "docker-ce",
             "docker-ce-cli",
             "containerd.io",
@@ -120,7 +131,7 @@ def remove_docker_installation(cli: str | None) -> list[str]:
         ]
         ok, output = run(["sudo", "apt-get", "purge", "-y", *packages])
         messages.append(
-            "Paquetes de Docker desinstalados."
+            "Docker Desktop/Engine desinstalado."
             if ok
             else f"No se pudieron desinstalar todos los paquetes de Docker: {output}"
         )
@@ -135,6 +146,7 @@ def remove_docker_installation(cli: str | None) -> list[str]:
 
 
 def uninstall(delete_data: bool, remove_images: bool, remove_docker: bool = False) -> list[str]:
+    """Remove NeoPOS resources and optionally remove Docker itself."""
     messages: list[str] = []
     compose = INSTALL_DIR / "docker-compose.yml"
     cli = docker_cli()
@@ -162,6 +174,8 @@ def uninstall(delete_data: bool, remove_images: bool, remove_docker: bool = Fals
         messages.append("Datos conservados. Solo se retiraron los servicios de NeoPOS.")
     if remove_docker:
         messages.extend(remove_docker_installation(cli))
+    else:
+        messages.append("Docker Desktop/Engine se conserva y no se desinstala.")
     return messages
 
 
@@ -180,7 +194,7 @@ class Uninstaller(_TkBase):
             raise RuntimeError("La interfaz gráfica requiere Tk; usa --cli para desinstalar en este entorno.")
         super().__init__()
         self.title("Desinstalar NeoPOS")
-        self.geometry("560x390")
+        self.geometry("560x470")
         self.resizable(False, False)
         self.delete_data = tk.BooleanVar(value=False)
         self.remove_images = tk.BooleanVar(value=True)
@@ -221,7 +235,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--delete-data", action="store_true")
     parser.add_argument("--remove-images", action="store_true")
-    parser.add_argument("--remove-docker", action="store_true")
+    parser.add_argument("--remove-docker", action="store_true", help="Desinstala Docker y elimina todos sus recursos")
     parser.add_argument("--cli", action="store_true")
     args = parser.parse_args()
     if args.cli:

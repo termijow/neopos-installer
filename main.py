@@ -24,6 +24,7 @@ NEOPOS_LOCAL_MANIFEST_URL = (
     "https://github.com/termijow/neopos-installer/releases/latest/download/neopos-local-manifest.json"
 )
 WINDOWS_AUTOSTART_TASK = "NeoPOS Local Services"
+LOCAL_COMPOSE_PROJECT = "neopos-local"
 LOCAL_COMPOSE_SERVICES = {"api", "frontend", "postgres", "printer", "minio"}
 LOCAL_FRONTEND_URL = "http://127.0.0.1:5173"
 DOCKER_READY_TIMEOUT_SECONDS = 180
@@ -74,6 +75,7 @@ class NeoPOSInstaller(ctk.CTk):
         # Kept only for compatibility with installers built from an older
         # flow. Current installations activate from NeoPOS Local after startup.
         self.activation_payload = None
+        self.credentials_path = None
 
         self.title("NeoPOS Installer")
         self.geometry("820x500")
@@ -382,24 +384,11 @@ class NeoPOSInstaller(ctk.CTk):
         self.after(0, lambda: self.append_log("[+] Licencia y administradores de Cloud guardados en la base local."))
 
     def update_credentials_note(self, install_dir, payload):
-        """Keep the cashier secret in the requested file without duplicating
-        the Cloud password on disk."""
+        """Refresh the local credentials note without ever storing Cloud's password."""
         backend_env = os.path.join(install_dir, "local", "backend", ".env")
         values = self._read_env_file(backend_env)
-        credentials_path = os.path.join(install_dir, "admin-credentials.txt")
-        with open(credentials_path, "w", encoding="utf-8", newline="\n") as credentials:
-            credentials.write(
-                "NeoPOS Local - credenciales de la instalación\n"
-                f"Administrador Cloud: {payload['email']}\n"
-                "Contraseña de administrador: usa la contraseña validada de NeoPOS Cloud; no se guarda en texto plano.\n\n"
-                f"Cajero: {values.get('CASHIER_EMAIL', 'cajero@neopos.com')}\n"
-                f"Contraseña: {values.get('CASHIER_PASSWORD', '')}\n\n"
-                "Guarda este archivo en un lugar seguro y elimínalo cuando cambies la contraseña.\n"
-            )
-        try:
-            os.chmod(credentials_path, 0o600)
-        except OSError:
-            pass
+        values["ADMIN_EMAIL"] = payload.get("email", values.get("ADMIN_EMAIL", "admin@pos.local"))
+        self._write_credentials_files(install_dir, values)
 
     def run_streaming_process(self, command, cwd=None, env=None):
         """Run a process while forwarding stdout/stderr to the visible log."""
@@ -578,6 +567,66 @@ class NeoPOSInstaller(ctk.CTk):
         except OSError:
             pass
 
+    @staticmethod
+    def _credential_directory():
+        """Choose one user-visible location for the local credentials file."""
+        home = os.path.expanduser("~")
+        candidates = [
+            os.path.join(home, "Downloads"),
+            os.path.join(home, "Desktop"),
+        ]
+        for directory in candidates:
+            if os.path.isdir(directory):
+                return directory
+        # Some Windows profiles do not create either folder until first use.
+        # Prefer Downloads and create it so the path is deterministic.
+        try:
+            os.makedirs(candidates[0], exist_ok=True)
+            return candidates[0]
+        except OSError:
+            try:
+                os.makedirs(candidates[1], exist_ok=True)
+                return candidates[1]
+            except OSError:
+                return None
+
+    def _write_credentials_files(self, install_dir, values):
+        """Write actual local credentials to NeoPOS and Downloads/Desktop.
+
+        The Cloud password is deliberately absent: it is only used during
+        activation and must never be written to disk by the installer.
+        """
+        content = (
+            "NeoPOS Local - credenciales iniciales\n"
+            f"Administrador local inicial: {values.get('ADMIN_EMAIL', 'admin@pos.local')}\n"
+            f"Contraseña local inicial: {values.get('ADMIN_PASSWORD', '')}\n\n"
+            f"Cajero: {values.get('CASHIER_EMAIL', 'cajero@neopos.com')}\n"
+            f"Contraseña local: {values.get('CASHIER_PASSWORD', '')}\n\n"
+            "Al activar la licencia, el administrador local se sincroniza con\n"
+            "la cuenta de NeoPOS Cloud. La contraseña vigente será la de Cloud,\n"
+            "pero esa contraseña nunca se guarda en este archivo.\n"
+            "Guarda este archivo en un lugar seguro y elimínalo cuando cambies las contraseñas.\n"
+        )
+        targets = [os.path.join(install_dir, "admin-credentials.txt")]
+        visible_directory = self._credential_directory()
+        if visible_directory:
+            targets.append(os.path.join(visible_directory, "admin-credentials.txt"))
+
+        for index, credentials_path in enumerate(targets):
+            try:
+                os.makedirs(os.path.dirname(credentials_path), exist_ok=True)
+                with open(credentials_path, "w", encoding="utf-8", newline="\n") as credentials:
+                    credentials.write(content)
+                try:
+                    os.chmod(credentials_path, 0o600)
+                except OSError:
+                    pass
+                if index > 0:
+                    self.credentials_path = credentials_path
+            except OSError as error:
+                if index > 0:
+                    self.append_log(f"[WARN] No se pudo guardar la copia visible de credenciales: {error}")
+
     def ensure_runtime_environment(self, install_dir):
         """Create local secrets without putting credentials in the release ZIP."""
         backend_dir = os.path.join(install_dir, "local", "backend")
@@ -651,21 +700,7 @@ class NeoPOSInstaller(ctk.CTk):
                 self._write_env_value(backend_env, key, fallback)
                 backend_values[key] = fallback
 
-        credentials_path = os.path.join(install_dir, "admin-credentials.txt")
-        if not os.path.exists(credentials_path):
-            with open(credentials_path, "w", encoding="utf-8", newline="\n") as credentials:
-                credentials.write(
-                    "NeoPOS Local - credenciales iniciales\n"
-                    f"Administrador: {backend_values.get('ADMIN_EMAIL', 'admin@pos.local')}\n"
-                    f"Contraseña: {backend_values['ADMIN_PASSWORD']}\n\n"
-                    f"Cajero: {backend_values.get('CASHIER_EMAIL', 'cajero@neopos.com')}\n"
-                    f"Contraseña: {backend_values['CASHIER_PASSWORD']}\n\n"
-                    "Guarda este archivo en un lugar seguro y elimínalo cuando cambies la contraseña.\n"
-                )
-            try:
-                os.chmod(credentials_path, 0o600)
-            except OSError:
-                pass
+        self._write_credentials_files(install_dir, backend_values)
 
     def ensure_release_images(self, docker_cli, install_dir):
         """Load every bundled production image and fail clearly if one is missing."""
@@ -753,6 +788,7 @@ class NeoPOSInstaller(ctk.CTk):
                 "0000:30",
                 "/RU",
                 username,
+                "/IT",
                 "/RL",
                 "LIMITED",
                 "/TR",
@@ -787,7 +823,7 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory={install_dir}
-ExecStart=/usr/bin/docker compose -f {compose_file} up -d --remove-orphans
+ExecStart=/usr/bin/docker compose -p {LOCAL_COMPOSE_PROJECT} -f {compose_file} up -d --remove-orphans
 RemainAfterExit=yes
 
 [Install]
@@ -853,6 +889,7 @@ WantedBy=multi-user.target
                 candidates.append(os.path.join(program_files, "Docker", "Docker", "resources", "bin", "docker.exe"))
             if local_app_data:
                 candidates.append(os.path.join(local_app_data, "Programs", "Docker", "resources", "bin", "docker.exe"))
+                candidates.append(os.path.join(local_app_data, "Programs", "DockerDesktop", "resources", "bin", "docker.exe"))
         for candidate in candidates:
             if os.path.isfile(candidate):
                 return candidate
@@ -901,6 +938,14 @@ WantedBy=multi-user.target
                             os.environ["LOCALAPPDATA"],
                             "Programs",
                             "Docker",
+                            "Docker Desktop.exe",
+                        )
+                    )
+                    desktop_candidates.append(
+                        os.path.join(
+                            os.environ["LOCALAPPDATA"],
+                            "Programs",
+                            "DockerDesktop",
                             "Docker Desktop.exe",
                         )
                     )
@@ -1408,7 +1453,7 @@ WantedBy=multi-user.target
             elif platform.system() == "Linux" and os.path.exists(os.path.join(install_dir, "docker-compose.yml")):
                 self.after(0, lambda: self.append_log("[*] Ejecutando docker compose up en Linux..."))
                 subprocess.run([
-                    "sudo", "docker", "compose", "-f",
+                    "sudo", "docker", "compose", "-p", LOCAL_COMPOSE_PROJECT, "-f",
                     os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--remove-orphans",
                 ], check=True)
                 self.after(0, lambda: self.append_log("[*] Configurando inicio automático en Linux..."))
@@ -1534,12 +1579,10 @@ WantedBy=multi-user.target
     def finish_installation(self):
         self.task_running = False
         self.progressbar.stop()
-        credentials_file = os.path.join(
-            os.path.expanduser("~"), "NeoPOS", "admin-credentials.txt"
-        )
+        credentials_file = self.credentials_path
         credentials_hint = (
             f"\n\nCredenciales iniciales: {credentials_file}"
-            if os.path.exists(credentials_file)
+            if credentials_file and os.path.exists(credentials_file)
             else ""
         )
         messagebox.showinfo(

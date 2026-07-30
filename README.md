@@ -151,8 +151,12 @@ vuelve a levantar NeoPOS al iniciar sesión.
 
 En una instalación nueva, el instalador verifica que existan las tres imágenes
 de producción y la carpeta `local/backend` antes de iniciar Compose. También
-genera secretos locales para PostgreSQL, MinIO, JWT, la firma de licencias y las cuentas iniciales; la
-contraseña del administrador queda temporalmente en `NeoPOS/admin-credentials.txt`.
+genera secretos locales para PostgreSQL, MinIO, JWT, la firma de licencias y las cuentas iniciales. Las
+credenciales locales quedan en `NeoPOS/admin-credentials.txt` y también en
+`Descargas/admin-credentials.txt` (o `Escritorio/admin-credentials.txt` si
+Descargas no está disponible). Al activar la licencia, el administrador local
+se sincroniza con el correo y la contraseña de NeoPOS Cloud; la contraseña de
+Cloud nunca se guarda en el archivo de credenciales.
 Los puertos se publican únicamente en `127.0.0.1`.
 
 La comprobación de virtualización en Windows es únicamente informativa: si
@@ -165,10 +169,10 @@ La casilla de borrado elimina además los volúmenes PostgreSQL/MinIO, la
 configuración y los respaldos locales. Docker Desktop/Engine y recursos de
 otros proyectos no se eliminan por defecto.
 
-El desinstalador ofrece una opción separada para quitar Docker Desktop/Engine.
-Solo debe marcarse si el equipo no usa Docker para ningún otro proyecto: esa
-opción limpia todos los contenedores, imágenes y volúmenes Docker globales
-antes de desinstalar Docker.
+El desinstalador conserva Docker Desktop/Engine y los recursos de otros
+proyectos por defecto. Incluye una casilla explícita para desinstalar Docker
+Desktop/Engine; al marcarla se limpian todos los recursos Docker del equipo,
+incluidos los de otros proyectos, antes de ejecutar el desinstalador oficial.
 
 La licencia ya no se solicita durante la instalación de Docker. Al abrir
 NeoPOS Local por primera vez, la pantalla de activación solicita el correo y
