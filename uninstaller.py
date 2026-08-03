@@ -23,6 +23,8 @@ except ImportError:  # CLI cleanup must work on minimal Linux images too.
 PROJECT_NAME = "neopos-local"
 TASK_NAME = "NeoPOS Local Services"
 INSTALL_DIR = Path.home() / "NeoPOS"
+LINUX_RUNTIME_DIR = Path("/opt/neopos-local")
+LINUX_SYSTEMD_UNIT = Path("/etc/systemd/system/neopos-local.service")
 
 
 def docker_cli() -> str | None:
@@ -68,12 +70,22 @@ def remove_autostart() -> None:
         except OSError:
             pass
     elif platform.system() == "Linux":
-        service = Path.home() / ".config" / "systemd" / "user" / "neopos-local.service"
-        run(["systemctl", "--user", "disable", "--now", "neopos-local.service"])
-        try:
-            service.unlink(missing_ok=True)
-        except OSError:
-            pass
+        run(["sudo", "systemctl", "disable", "--now", "neopos-local.service"])
+        run(["sudo", "rm", "-f", str(LINUX_SYSTEMD_UNIT)])
+        run(["sudo", "systemctl", "daemon-reload"])
+        for runtime_file in (
+            LINUX_RUNTIME_DIR / "docker-compose.yml",
+            LINUX_RUNTIME_DIR / "init.sql",
+            LINUX_RUNTIME_DIR / ".env",
+            LINUX_RUNTIME_DIR / "local" / "backend" / ".env",
+        ):
+            run(["sudo", "rm", "-f", str(runtime_file)])
+        for runtime_directory in (
+            LINUX_RUNTIME_DIR / "local" / "backend",
+            LINUX_RUNTIME_DIR / "local",
+            LINUX_RUNTIME_DIR,
+        ):
+            run(["sudo", "rmdir", str(runtime_directory)])
 
 
 def remove_docker_installation(cli: str | None) -> list[str]:
@@ -85,11 +97,8 @@ def remove_docker_installation(cli: str | None) -> list[str]:
     """
     messages: list[str] = []
     if cli:
-        ok, output = run([cli, "system", "prune", "--all", "--volumes", "--force"])
         messages.append(
-            "Recursos globales de Docker eliminados."
-            if ok
-            else f"No se pudieron limpiar todos los recursos globales de Docker: {output}"
+            "No se ejecutó docker system prune: los recursos de otros proyectos se conservan."
         )
 
     if platform.system() == "Windows":
@@ -149,12 +158,18 @@ def uninstall(delete_data: bool, remove_images: bool, remove_docker: bool = Fals
     """Remove NeoPOS resources and optionally remove Docker itself."""
     messages: list[str] = []
     compose = INSTALL_DIR / "docker-compose.yml"
+    compose_directory = INSTALL_DIR
+    if platform.system() == "Linux" and (LINUX_RUNTIME_DIR / "docker-compose.yml").is_file():
+        compose = LINUX_RUNTIME_DIR / "docker-compose.yml"
+        compose_directory = LINUX_RUNTIME_DIR
     cli = docker_cli()
     if cli and compose.is_file():
         command = [cli, "compose", "-p", PROJECT_NAME, "-f", str(compose), "down", "--remove-orphans"]
+        if platform.system() == "Linux":
+            command.insert(0, "sudo")
         if delete_data:
             command.append("--volumes")
-        ok, output = run(command, INSTALL_DIR)
+        ok, output = run(command, compose_directory)
         messages.append("Servicios y contenedores detenidos." if ok else f"Docker no pudo detener completamente los servicios: {output}")
         if remove_images:
             for image in image_names():
@@ -205,8 +220,8 @@ class Uninstaller(_TkBase):
         ttk.Label(frame, text="Se eliminarán los contenedores, la tarea de inicio automático y la configuración del proyecto.", wraplength=500).pack(anchor="w")
         ttk.Checkbutton(frame, text="Eliminar también la BD, volúmenes, respaldos y datos locales", variable=self.delete_data).pack(anchor="w", pady=(22, 4))
         ttk.Checkbutton(frame, text="Eliminar imágenes Docker de NeoPOS", variable=self.remove_images).pack(anchor="w", pady=4)
-        ttk.Checkbutton(frame, text="Desinstalar Docker Desktop/Engine y limpiar todos sus recursos", variable=self.remove_docker).pack(anchor="w", pady=4)
-        ttk.Label(frame, text="Docker se conserva por defecto. Si marcas la opción anterior, también se eliminarán imágenes, contenedores y volúmenes de otros proyectos Docker.", foreground="#8a5a00", wraplength=500).pack(anchor="w", pady=14)
+        ttk.Checkbutton(frame, text="Desinstalar Docker Desktop/Engine (sin borrar recursos de otros proyectos)", variable=self.remove_docker).pack(anchor="w", pady=4)
+        ttk.Label(frame, text="Docker se conserva por defecto. NeoPOS nunca ejecuta una limpieza global de contenedores, imágenes o volúmenes.", foreground="#8a5a00", wraplength=500).pack(anchor="w", pady=14)
         self.status = ttk.Label(frame, text="", wraplength=500)
         self.status.pack(anchor="w", pady=5)
         ttk.Button(frame, text="Desinstalar", command=self.confirm).pack(side="right", pady=16)
@@ -217,7 +232,7 @@ class Uninstaller(_TkBase):
             return
         if self.remove_docker.get() and not messagebox.askyesno(
             "Confirmar eliminación de Docker",
-            "Esto desinstalará Docker Desktop/Engine y eliminará TODOS los contenedores, imágenes y volúmenes Docker del equipo, incluidos los de otros proyectos. ¿Continuar?",
+            "Esto desinstalará Docker Desktop/Engine. Los recursos de otros proyectos no se eliminarán mediante una limpieza global. ¿Continuar?",
             parent=self,
         ):
             return
@@ -235,7 +250,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--delete-data", action="store_true")
     parser.add_argument("--remove-images", action="store_true")
-    parser.add_argument("--remove-docker", action="store_true", help="Desinstala Docker y elimina todos sus recursos")
+    parser.add_argument("--remove-docker", action="store_true", help="Desinstala Docker sin ejecutar una limpieza global")
     parser.add_argument("--cli", action="store_true")
     args = parser.parse_args()
     if args.cli:

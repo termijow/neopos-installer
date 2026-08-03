@@ -25,6 +25,8 @@ NEOPOS_LOCAL_MANIFEST_URL = (
 )
 WINDOWS_AUTOSTART_TASK = "NeoPOS Local Services"
 LOCAL_COMPOSE_PROJECT = "neopos-local"
+LINUX_RUNTIME_DIR = "/opt/neopos-local"
+LINUX_SYSTEMD_UNIT = "/etc/systemd/system/neopos-local.service"
 LOCAL_COMPOSE_SERVICES = {"api", "frontend", "postgres", "printer", "minio"}
 LOCAL_FRONTEND_URL = "http://127.0.0.1:5173"
 DOCKER_READY_TIMEOUT_SECONDS = 180
@@ -813,8 +815,44 @@ class NeoPOSInstaller(ctk.CTk):
         return True
 
     def register_linux_autostart(self, install_dir):
-        """Register a systemd unit for Linux installations."""
-        compose_file = os.path.join(install_dir, "docker-compose.yml")
+        """Install an immutable root-owned runtime and register systemd.
+
+        The editable per-user installation remains the update source, but the
+        privileged service never executes Compose or environment files from it.
+        """
+        runtime_files = (
+            ("docker-compose.yml", "docker-compose.yml", "0644"),
+            ("init.sql", "init.sql", "0644"),
+            (".env", ".env", "0600"),
+            (os.path.join("local", "backend", ".env"), os.path.join("local", "backend", ".env"), "0600"),
+        )
+        for source_name, _, _ in runtime_files:
+            source = os.path.join(install_dir, source_name)
+            if not os.path.isfile(source):
+                raise RuntimeError(f"Falta un archivo necesario para el runtime Linux: {source}")
+
+        subprocess.run(
+            ["sudo", "install", "-d", "-o", "root", "-g", "root", "-m", "0750", LINUX_RUNTIME_DIR],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "sudo", "install", "-d", "-o", "root", "-g", "root", "-m", "0750",
+                os.path.join(LINUX_RUNTIME_DIR, "local", "backend"),
+            ],
+            check=True,
+        )
+        for source_name, destination_name, mode in runtime_files:
+            subprocess.run(
+                [
+                    "sudo", "install", "-o", "root", "-g", "root", "-m", mode,
+                    os.path.join(install_dir, source_name),
+                    os.path.join(LINUX_RUNTIME_DIR, destination_name),
+                ],
+                check=True,
+            )
+
+        compose_file = os.path.join(LINUX_RUNTIME_DIR, "docker-compose.yml")
         unit = f"""[Unit]
 Description=NeoPOS Local Services
 Requires=docker.service
@@ -822,9 +860,15 @@ After=docker.service
 
 [Service]
 Type=oneshot
-WorkingDirectory={install_dir}
+WorkingDirectory={LINUX_RUNTIME_DIR}
 ExecStart=/usr/bin/docker compose -p {LOCAL_COMPOSE_PROJECT} -f {compose_file} up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -p {LOCAL_COMPOSE_PROJECT} -f {compose_file} stop
 RemainAfterExit=yes
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
 
 [Install]
 WantedBy=multi-user.target
@@ -834,18 +878,19 @@ WantedBy=multi-user.target
             unit_path = unit_file.name
         try:
             subprocess.run(
-                ["sudo", "install", "-m", "0644", unit_path, "/etc/systemd/system/neopos-local.service"],
+                ["sudo", "install", "-o", "root", "-g", "root", "-m", "0644", unit_path, LINUX_SYSTEMD_UNIT],
                 check=True,
             )
             subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
-            subprocess.run(["sudo", "systemctl", "enable", "--now", "neopos-local.service"], check=True)
+            subprocess.run(["sudo", "systemctl", "enable", "neopos-local.service"], check=True)
+            subprocess.run(["sudo", "systemctl", "restart", "neopos-local.service"], check=True)
         finally:
             try:
                 os.remove(unit_path)
             except OSError:
                 pass
         self.after(0, lambda: self.append_log(
-            "[+] Servicio systemd configurado para iniciar NeoPOS al arrancar Linux."
+            "[+] Servicio systemd configurado con runtime root-owned en /opt/neopos-local."
         ))
 
     def verify_windows_virtualization(self):
@@ -1451,12 +1496,7 @@ WantedBy=multi-user.target
                 except Exception as ex:
                     self.after(0, lambda: self.append_log(f"[-] No se pudo crear el acceso directo: {ex}"))
             elif platform.system() == "Linux" and os.path.exists(os.path.join(install_dir, "docker-compose.yml")):
-                self.after(0, lambda: self.append_log("[*] Ejecutando docker compose up en Linux..."))
-                subprocess.run([
-                    "sudo", "docker", "compose", "-p", LOCAL_COMPOSE_PROJECT, "-f",
-                    os.path.join(install_dir, "docker-compose.yml"), "up", "-d", "--remove-orphans",
-                ], check=True)
-                self.after(0, lambda: self.append_log("[*] Configurando inicio automático en Linux..."))
+                self.after(0, lambda: self.append_log("[*] Instalando runtime protegido e iniciando servicios Linux..."))
                 self.register_linux_autostart(install_dir)
             else:
                 raise RuntimeError(
@@ -1557,14 +1597,7 @@ WantedBy=multi-user.target
                 self.wait_for_local_services(docker_cli, compose_file)
                 self.register_windows_autostart(install_dir)
             elif platform.system() == "Linux":
-                update_status("Construyendo e iniciando los servicios locales...")
-                subprocess.run(
-                    [
-                        "sudo", "docker", "compose", "-p", "neopos-local", "-f", compose_file,
-                        "up", "-d", "--remove-orphans",
-                    ],
-                    check=True,
-                )
+                update_status("Actualizando el runtime protegido e iniciando los servicios locales...")
                 self.register_linux_autostart(install_dir)
             else:
                 raise RuntimeError(f"Sistema operativo no soportado: {platform.system()}")
