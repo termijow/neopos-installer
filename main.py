@@ -77,6 +77,7 @@ class NeoPOSInstaller(ctk.CTk):
         self.logs_visible = True
         self.task_running = False
         self.credentials_path = None
+        self.local_credentials = {}
         self._sudo_password = None
         self._docker_requires_sudo = False
 
@@ -183,6 +184,7 @@ class NeoPOSInstaller(ctk.CTk):
         self.progress_actions.grid_columnconfigure(0, weight=1)
         self.progress_actions.grid_columnconfigure(1, weight=1)
         self.progress_actions.grid_columnconfigure(2, weight=1)
+        self.progress_actions.grid_columnconfigure(3, weight=1)
 
         self.log_toggle_btn = ctk.CTkButton(
             self.progress_actions,
@@ -198,13 +200,21 @@ class NeoPOSInstaller(ctk.CTk):
         )
         self.open_log_btn.grid(row=0, column=1, padx=4, sticky="ew")
 
+        self.open_credentials_btn = ctk.CTkButton(
+            self.progress_actions,
+            text="Abrir credenciales",
+            command=self.open_credentials_file,
+            state="disabled",
+        )
+        self.open_credentials_btn.grid(row=0, column=2, padx=4, sticky="ew")
+
         self.close_btn = ctk.CTkButton(
             self.progress_actions,
             text="Cerrar",
             command=self.destroy,
             state="disabled",
         )
-        self.close_btn.grid(row=0, column=2, padx=4, sticky="ew")
+        self.close_btn.grid(row=0, column=3, padx=4, sticky="ew")
 
         self.log_box = ctk.CTkTextbox(self.progress_frame, height=150, font=ctk.CTkFont(size=12, family="Consolas"))
         self.log_box.grid(row=3, column=0, sticky="nsew", padx=20, pady=(0, 4))
@@ -241,6 +251,7 @@ class NeoPOSInstaller(ctk.CTk):
         self.close_btn.configure(state="disabled")
         self.log_toggle_btn.configure(state="normal")
         self.open_log_btn.configure(state="normal")
+        self.open_credentials_btn.configure(state="disabled")
         self.options_frame.grid_forget()
         self.progress_frame.grid(row=2, column=0, padx=20, pady=20, sticky="ew")
         self.progressbar.start()
@@ -266,6 +277,25 @@ class NeoPOSInstaller(ctk.CTk):
                 subprocess.Popen(["xdg-open", directory])
         except (OSError, AttributeError) as error:
             self.append_log(f"[ERROR] No se pudo abrir la carpeta de logs: {error}")
+
+    def open_credentials_file(self):
+        """Open the generated credentials file without writing credentials to logs."""
+        path = self.credentials_path
+        if not path or not os.path.isfile(path):
+            messagebox.showwarning(
+                "Credenciales no disponibles",
+                "No se encontró el archivo de credenciales iniciales.",
+            )
+            return
+        try:
+            if platform.system() == "Windows":
+                os.startfile(path)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except (OSError, AttributeError) as error:
+            self.append_log(f"[WARN] No se pudo abrir el archivo de credenciales: {error}")
 
     def ask_linux_admin_password(self):
         """Ask for sudo credentials on the UI thread without exposing them in logs."""
@@ -554,40 +584,51 @@ class NeoPOSInstaller(ctk.CTk):
     def _credential_directory():
         """Choose one user-visible location for the local credentials file."""
         home = os.path.expanduser("~")
+        xdg_download = os.environ.get("XDG_DOWNLOAD_DIR", "").strip()
+        if xdg_download:
+            xdg_download = xdg_download.replace("$HOME", home)
         candidates = [
+            xdg_download,
             os.path.join(home, "Downloads"),
+            os.path.join(home, "Descargas"),
             os.path.join(home, "Desktop"),
+            os.path.join(home, "Escritorio"),
         ]
         for directory in candidates:
-            if os.path.isdir(directory):
+            if directory and os.path.isdir(directory):
                 return directory
-        # Some Windows profiles do not create either folder until first use.
-        # Prefer Downloads and create it so the path is deterministic.
+        default_directory = (
+            os.path.join(home, "Descargas")
+            if platform.system() == "Linux"
+            else os.path.join(home, "Downloads")
+        )
         try:
-            os.makedirs(candidates[0], exist_ok=True)
-            return candidates[0]
+            os.makedirs(default_directory, exist_ok=True)
+            return default_directory
         except OSError:
             try:
-                os.makedirs(candidates[1], exist_ok=True)
-                return candidates[1]
+                fallback_directory = os.path.join(home, "Downloads")
+                os.makedirs(fallback_directory, exist_ok=True)
+                return fallback_directory
             except OSError:
                 return None
 
     def _write_credentials_files(self, install_dir, values):
         """Write actual local credentials to NeoPOS and Downloads/Desktop.
 
-        The Cloud password is deliberately absent: it is only used during
-        activation and must never be written to disk by the installer.
+        The Cloud password is deliberately absent: it is used only to create
+        the synchronized local administrator during activation and must never
+        be written to disk by the installer.
         """
         content = (
             "NeoPOS Local - credenciales iniciales\n"
-            f"Administrador local inicial: {values.get('ADMIN_EMAIL', 'admin@pos.local')}\n"
-            f"Contraseña local inicial: {values.get('ADMIN_PASSWORD', '')}\n\n"
-            f"Cajero: {values.get('CASHIER_EMAIL', 'cajero@neopos.com')}\n"
-            f"Contraseña local: {values.get('CASHIER_PASSWORD', '')}\n\n"
-            "La cuenta de NeoPOS Cloud solo valida la licencia, la empresa y la sede.\n"
-            "Estas credenciales locales permanecen independientes y nunca se\n"
-            "reemplazan por el correo o la contraseña de Cloud.\n"
+            f"Administrador local inicial: {values.get('ADMIN_EMAIL', '')}\n"
+            f"Contraseña: {values.get('ADMIN_PASSWORD', '')}\n\n"
+            f"Cajero local: {values.get('CASHIER_EMAIL', '')}\n"
+            f"Contraseña: {values.get('CASHIER_PASSWORD', '')}\n\n"
+            "Al activar la licencia, la cuenta de NeoPOS Cloud usada en la activación\n"
+            "también queda creada como administrador local con la misma contraseña.\n"
+            "La contraseña de Cloud no se guarda en este archivo.\n"
             "Guarda este archivo en un lugar seguro y elimínalo cuando cambies las contraseñas.\n"
         )
         targets = [os.path.join(install_dir, "admin-credentials.txt")]
@@ -604,11 +645,17 @@ class NeoPOSInstaller(ctk.CTk):
                     os.chmod(credentials_path, 0o600)
                 except OSError:
                     pass
-                if index > 0:
+                if index > 0 or self.credentials_path is None:
                     self.credentials_path = credentials_path
+                self.append_log(f"[+] Archivo de credenciales creado en: {credentials_path}")
             except OSError as error:
-                if index > 0:
-                    self.append_log(f"[WARN] No se pudo guardar la copia visible de credenciales: {error}")
+                self.append_log(f"[WARN] No se pudo guardar el archivo de credenciales: {error}")
+        self.local_credentials = {
+            "ADMIN_EMAIL": values.get("ADMIN_EMAIL", ""),
+            "ADMIN_PASSWORD": values.get("ADMIN_PASSWORD", ""),
+            "CASHIER_EMAIL": values.get("CASHIER_EMAIL", ""),
+            "CASHIER_PASSWORD": values.get("CASHIER_PASSWORD", ""),
+        }
 
     def ensure_runtime_environment(self, install_dir):
         """Create local secrets without putting credentials in the release ZIP."""
@@ -649,6 +696,9 @@ class NeoPOSInstaller(ctk.CTk):
             )
             self._write_env_value(backend_env, "JWT_SECRET", secrets.token_hex(32))
             self._write_env_value(backend_env, "LICENSE_SIGNING_SECRET", secrets.token_hex(32))
+            credential_suffix = secrets.token_hex(4)
+            self._write_env_value(backend_env, "ADMIN_EMAIL", f"admin-{credential_suffix}@local.neopos")
+            self._write_env_value(backend_env, "CASHIER_EMAIL", f"cajero-{credential_suffix}@local.neopos")
             self._write_env_value(backend_env, "ADMIN_PASSWORD", admin_password)
             cashier_password = secrets.token_hex(24)
             self._write_env_value(backend_env, "CASHIER_PASSWORD", cashier_password)
@@ -1712,11 +1762,20 @@ WantedBy=multi-user.target
         self.task_running = False
         self.progressbar.stop()
         credentials_file = self.credentials_path
-        credentials_hint = (
-            f"\n\nCredenciales iniciales: {credentials_file}"
-            if credentials_file and os.path.exists(credentials_file)
-            else ""
-        )
+        credentials_hint = ""
+        if self.local_credentials:
+            credentials_hint = (
+                "\n\nCredenciales locales iniciales:\n"
+                f"Administrador: {self.local_credentials.get('ADMIN_EMAIL', '')}\n"
+                f"Contraseña: {self.local_credentials.get('ADMIN_PASSWORD', '')}\n\n"
+                f"Cajero: {self.local_credentials.get('CASHIER_EMAIL', '')}\n"
+                f"Contraseña: {self.local_credentials.get('CASHIER_PASSWORD', '')}"
+            )
+        if credentials_file and os.path.exists(credentials_file):
+            credentials_hint += f"\n\nArchivo protegido: {credentials_file}"
+            self.open_credentials_btn.configure(state="normal")
+        self.progress_label.configure(text="Instalación completada")
+        self.close_btn.configure(state="normal")
         messagebox.showinfo(
             "NeoPOS instalado",
             "Instalación completa. NeoPOS Local está disponible en http://localhost:5173. "
@@ -1724,8 +1783,6 @@ WantedBy=multi-user.target
             + credentials_hint,
         )
         webbrowser.open("http://localhost:5173")
-        self.destroy()
-        sys.exit(0)
 
 if __name__ == "__main__":
     app = NeoPOSInstaller()
