@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.1.27",
+  "app_version": "v0.1.28",
   "database_migration": "additive",
-  "breaking_changes": false,
-  "release_notes": "Cambios compatibles y migraciones aditivas.",
+  "breaking_changes": true,
+  "release_notes": "Seguridad y activación: validación completa de cuenta, licencia, negocio y sede; errores HTTP reales; sesiones locales HttpOnly; almacenamiento privado e imports limitados. Después de actualizar se debe iniciar sesión local nuevamente.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",

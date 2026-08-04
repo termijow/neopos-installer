@@ -74,9 +74,6 @@ class NeoPOSInstaller(ctk.CTk):
         )
         self.logs_visible = True
         self.task_running = False
-        # Kept only for compatibility with installers built from an older
-        # flow. Current installations activate from NeoPOS Local after startup.
-        self.activation_payload = None
         self.credentials_path = None
 
         self.title("NeoPOS Installer")
@@ -265,132 +262,6 @@ class NeoPOSInstaller(ctk.CTk):
                 subprocess.Popen(["xdg-open", directory])
         except (OSError, AttributeError) as error:
             self.append_log(f"[ERROR] No se pudo abrir la carpeta de logs: {error}")
-
-    def ask_activation_payload(self):
-        """Legacy activation dialog kept for compatibility with old callers.
-
-        New installations activate from NeoPOS Local after the services are
-        ready. Keeping this method isolated avoids asking for Cloud secrets in
-        the installer itself, which also makes the installer independent from
-        the Cloud onboarding endpoint.
-        """
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Activar NeoPOS")
-        dialog.geometry("560x610")
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(dialog, text="Cuenta de NeoPOS Cloud", font=ctk.CTkFont(size=22, weight="bold")).grid(row=0, column=0, padx=28, pady=(24, 6))
-        ctk.CTkLabel(dialog, text="Primero valida tu cuenta. Después podrás reclamar la licencia para esta sede.", wraplength=480, text_color="gray").grid(row=1, column=0, padx=28, pady=(0, 18))
-        email = ctk.CTkEntry(dialog, placeholder_text="Correo de NeoPOS Cloud", width=460)
-        email.grid(row=2, column=0, padx=28, pady=7)
-        password = ctk.CTkEntry(dialog, placeholder_text="Contraseña de NeoPOS Cloud", show="*", width=460)
-        password.grid(row=3, column=0, padx=28, pady=7)
-        account_status = ctk.CTkLabel(dialog, text="Cuenta pendiente de validar", text_color="#d97706")
-        account_status.grid(row=4, column=0, padx=28, pady=(2, 8))
-
-        license_key = ctk.CTkEntry(dialog, placeholder_text="Licencia", width=460, state="disabled")
-        license_key.grid(row=5, column=0, padx=28, pady=7)
-        business_name = ctk.CTkEntry(dialog, placeholder_text="Nombre de la empresa", width=460, state="disabled")
-        business_name.grid(row=6, column=0, padx=28, pady=7)
-        branch_name = ctk.CTkEntry(dialog, placeholder_text="Nombre de la sede", width=460, state="disabled")
-        branch_name.grid(row=7, column=0, padx=28, pady=7)
-
-        result = {"payload": None}
-        cloud_url = os.environ.get("NEOPOS_CLOUD_URL", DEFAULT_CLOUD_URL).rstrip("/")
-
-        def validate_account():
-            account_email = email.get().strip().lower()
-            account_password = password.get()
-            if not account_email or not account_password:
-                messagebox.showwarning("Datos faltantes", "Escribe el correo y la contraseña de NeoPOS Cloud.", parent=dialog)
-                return
-            try:
-                body = json.dumps({"email": account_email, "password": account_password}).encode("utf-8")
-                request = urllib.request.Request(
-                    cloud_url + "/api/v1/auth/validate", data=body,
-                    headers={"Content-Type": "application/json"}, method="POST"
-                )
-                with urllib.request.urlopen(request, timeout=10) as response:
-                    validation = json.loads(response.read().decode("utf-8"))
-                if not validation.get("valid"):
-                    raise RuntimeError(validation.get("error", "Las credenciales no son válidas."))
-                account_status.configure(text="Cuenta validada. Completa los datos de la sucursal.", text_color="#16a34a")
-                for field in (license_key, business_name, branch_name):
-                    field.configure(state="normal")
-                validate_button.configure(state="disabled")
-            except Exception as error:
-                account_status.configure(text="No se pudo validar la cuenta", text_color="#dc2626")
-                messagebox.showerror("Cuenta no válida", str(error), parent=dialog)
-
-        def submit():
-            values = (license_key.get().strip(), business_name.get().strip(), branch_name.get().strip())
-            if any(not value for value in values):
-                messagebox.showwarning("Datos faltantes", "Completa la licencia, empresa y sede.", parent=dialog)
-                return
-            if str(validate_button.cget("state")) != "disabled":
-                messagebox.showwarning("Cuenta pendiente", "Valida primero la cuenta de NeoPOS Cloud.", parent=dialog)
-                return
-            result["payload"] = {
-                "license_key": values[0], "email": email.get().strip().lower(),
-                "password": password.get(), "business_name": values[1], "branch_name": values[2],
-                "cloud_url": cloud_url,
-            }
-            dialog.destroy()
-
-        validate_button = ctk.CTkButton(dialog, text="Validar cuenta Cloud", command=validate_account)
-        validate_button.grid(row=8, column=0, padx=28, pady=(12, 7), sticky="ew")
-        submit_button = ctk.CTkButton(dialog, text="Continuar con la instalación", command=submit, state="normal")
-        submit_button.grid(row=9, column=0, padx=28, pady=(7, 24), sticky="ew")
-        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
-        self.wait_window(dialog)
-        self.activation_payload = result["payload"]
-        return self.activation_payload
-
-    def validate_cloud_activation(self, payload):
-        body = json.dumps({key: value for key, value in payload.items() if key != "cloud_url"}).encode("utf-8")
-        request = urllib.request.Request(
-            payload["cloud_url"] + "/api/v1/licenses/activate", data=body,
-            headers={"Content-Type": "application/json"}, method="POST"
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                result = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as error:
-            details = error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"NeoPOS Cloud rechazó la activación: {details}") from error
-        except Exception as error:
-            raise RuntimeError(f"No se pudo contactar a NeoPOS Cloud: {error}") from error
-        if not result.get("valid"):
-            raise RuntimeError(result.get("error", "La licencia no es válida para esta cuenta o sede."))
-        self.after(0, lambda: self.append_log("[+] Cuenta, empresa, sede y licencia validadas en NeoPOS Cloud."))
-        return result
-
-    def activate_local_license(self, payload):
-        body = json.dumps({key: value for key, value in payload.items() if key != "cloud_url"}).encode("utf-8")
-        request = urllib.request.Request(
-            "http://127.0.0.1:8080/api/v1/license/activate", data=body,
-            headers={"Content-Type": "application/json"}, method="POST"
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=20) as response:
-                result = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as error:
-            details = error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"NeoPOS Local no pudo guardar la activación: {details}") from error
-        if response.status < 200 or response.status >= 300:
-            raise RuntimeError(f"NeoPOS Local respondió HTTP {response.status}")
-        if isinstance(result, dict) and isinstance(result.get("data"), dict) and not result["data"].get("valid", True):
-            raise RuntimeError(result["data"].get("message", "NeoPOS Local rechazó la licencia."))
-        self.after(0, lambda: self.append_log("[+] Licencia y administradores de Cloud guardados en la base local."))
-
-    def update_credentials_note(self, install_dir, payload):
-        """Refresh the local credentials note without ever storing Cloud's password."""
-        backend_env = os.path.join(install_dir, "local", "backend", ".env")
-        values = self._read_env_file(backend_env)
-        values["ADMIN_EMAIL"] = payload.get("email", values.get("ADMIN_EMAIL", "admin@pos.local"))
-        self._write_credentials_files(install_dir, values)
 
     def run_streaming_process(self, command, cwd=None, env=None):
         """Run a process while forwarding stdout/stderr to the visible log."""
@@ -604,9 +475,9 @@ class NeoPOSInstaller(ctk.CTk):
             f"Contraseña local inicial: {values.get('ADMIN_PASSWORD', '')}\n\n"
             f"Cajero: {values.get('CASHIER_EMAIL', 'cajero@neopos.com')}\n"
             f"Contraseña local: {values.get('CASHIER_PASSWORD', '')}\n\n"
-            "Al activar la licencia, el administrador local se sincroniza con\n"
-            "la cuenta de NeoPOS Cloud. La contraseña vigente será la de Cloud,\n"
-            "pero esa contraseña nunca se guarda en este archivo.\n"
+            "La cuenta de NeoPOS Cloud solo valida la licencia, la empresa y la sede.\n"
+            "Estas credenciales locales permanecen independientes y nunca se\n"
+            "reemplazan por el correo o la contraseña de Cloud.\n"
             "Guarda este archivo en un lugar seguro y elimínalo cuando cambies las contraseñas.\n"
         )
         targets = [os.path.join(install_dir, "admin-credentials.txt")]
@@ -1228,6 +1099,8 @@ WantedBy=multi-user.target
 
         backup_dir = os.path.join(install_dir, "backups")
         os.makedirs(backup_dir, exist_ok=True)
+        if platform.system() != "Windows":
+            os.chmod(backup_dir, 0o700)
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         backup_file = os.path.join(backup_dir, f"pos-{timestamp}.sql")
 
@@ -1270,12 +1143,9 @@ WantedBy=multi-user.target
             details = dump.stderr.decode("utf-8", errors="replace").strip() if dump else "sin respuesta de pg_dump"
             raise RuntimeError(f"No se pudo crear el respaldo de PostgreSQL. {details}")
 
-        with open(backup_file, "wb") as backup:
+        descriptor = os.open(backup_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as backup:
             backup.write(dump.stdout)
-
-        env_file = os.path.join(install_dir, "local", "backend", ".env")
-        if os.path.exists(env_file):
-            shutil.copy2(env_file, os.path.join(backup_dir, f"backend-{timestamp}.env"))
         self.after(0, lambda: self.append_log(f"[+] Respaldo de base de datos creado: {backup_file}"))
 
     def prepare_update(self, install_dir, zip_ref):
