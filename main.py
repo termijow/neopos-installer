@@ -1,5 +1,6 @@
 import customtkinter as ctk
 import tkinter.messagebox as messagebox
+import tkinter.simpledialog as simpledialog
 import sys
 import json
 import os
@@ -30,6 +31,7 @@ LINUX_SYSTEMD_UNIT = "/etc/systemd/system/neopos-local.service"
 LOCAL_COMPOSE_SERVICES = {"api", "frontend", "postgres", "printer", "minio"}
 LOCAL_FRONTEND_URL = "http://127.0.0.1:5173"
 DOCKER_READY_TIMEOUT_SECONDS = 180
+LINUX_DOCKER_READY_TIMEOUT_SECONDS = 30
 LOCAL_SERVICES_READY_TIMEOUT_SECONDS = 180
 BUNDLED_RELEASE_FILENAME = "neopos-local.zip"
 DEFAULT_CLOUD_URL = "https://api-neopos-cloud.prismabitetesting.xyz"
@@ -75,6 +77,8 @@ class NeoPOSInstaller(ctk.CTk):
         self.logs_visible = True
         self.task_running = False
         self.credentials_path = None
+        self._sudo_password = None
+        self._docker_requires_sudo = False
 
         self.title("NeoPOS Installer")
         self.geometry("820x500")
@@ -263,13 +267,116 @@ class NeoPOSInstaller(ctk.CTk):
         except (OSError, AttributeError) as error:
             self.append_log(f"[ERROR] No se pudo abrir la carpeta de logs: {error}")
 
-    def run_streaming_process(self, command, cwd=None, env=None):
+    def ask_linux_admin_password(self):
+        """Ask for sudo credentials on the UI thread without exposing them in logs."""
+        completed = threading.Event()
+        answer = {"password": None}
+
+        def prompt():
+            try:
+                answer["password"] = simpledialog.askstring(
+                    "Permisos de administrador",
+                    "NeoPOS necesita permisos de administrador para iniciar Docker Engine "
+                    "y registrar sus servicios.\n\n"
+                    "Ingresa la contraseña sudo de este usuario. Se utilizará únicamente "
+                    "durante esta operación y no se guardará en disco ni en los logs.",
+                    show="*",
+                    parent=self,
+                )
+            finally:
+                completed.set()
+
+        self.after(0, prompt)
+        completed.wait()
+        return answer["password"]
+
+    def ensure_linux_admin_access(self):
+        """Validate sudo once before a Linux install or repair operation."""
+        if platform.system() != "Linux" or os.geteuid() == 0:
+            return
+        if self._sudo_password:
+            return
+        if not shutil.which("sudo"):
+            raise RuntimeError(
+                "No se encontró sudo. Instálalo o ejecuta el instalador desde una cuenta "
+                "con permisos de administrador."
+            )
+
+        for attempt in range(1, 4):
+            password = self.ask_linux_admin_password()
+            if password is None:
+                raise RuntimeError(
+                    "La autorización de administrador fue cancelada. "
+                    "NeoPOS no modificó los servicios del sistema."
+                )
+            if not password:
+                self.after(0, lambda: self.append_log(
+                    "[WARN] La contraseña sudo no puede estar vacía."
+                ))
+                continue
+
+            validation = subprocess.run(
+                ["sudo", "-S", "-k", "-p", "", "--", "true"],
+                input=password + "\n",
+                capture_output=True,
+                text=True,
+            )
+            if validation.returncode == 0:
+                self._sudo_password = password
+                self.after(0, lambda: self.append_log(
+                    "[+] Permisos de administrador verificados."
+                ))
+                return
+
+            self.after(0, lambda attempt=attempt: self.append_log(
+                f"[WARN] No se pudo validar sudo (intento {attempt}/3)."
+            ))
+
+        raise RuntimeError(
+            "No se pudo validar la contraseña sudo después de 3 intentos. "
+            "Confirma que el usuario tenga permisos de administrador."
+        )
+
+    def clear_linux_admin_access(self):
+        self._sudo_password = None
+        self._docker_requires_sudo = False
+
+    def run_process(self, command, privileged=False, **kwargs):
+        """Run a command, feeding sudo through stdin only when Linux needs it."""
+        password_input = None
+        if privileged and platform.system() == "Linux" and os.geteuid() != 0:
+            if not self._sudo_password:
+                raise RuntimeError("NeoPOS necesita autorización sudo para continuar.")
+            command = ["sudo", "-S", "-k", "-p", "", "--", *command]
+            uses_text = bool(kwargs.get("text") or kwargs.get("encoding"))
+            password_input = (
+                self._sudo_password + "\n"
+                if uses_text
+                else (self._sudo_password + "\n").encode("utf-8")
+            )
+        return subprocess.run(command, input=password_input, **kwargs)
+
+    def run_docker_process(self, docker_cli, arguments, **kwargs):
+        return self.run_process(
+            [docker_cli, *arguments],
+            privileged=self._docker_requires_sudo,
+            **kwargs,
+        )
+
+    def run_streaming_process(self, command, cwd=None, env=None, privileged=False):
         """Run a process while forwarding stdout/stderr to the visible log."""
+        sudo_password = None
+        if privileged and platform.system() == "Linux" and os.geteuid() != 0:
+            if not self._sudo_password:
+                raise RuntimeError("NeoPOS necesita autorización sudo para continuar.")
+            command = ["sudo", "-S", "-k", "-p", "", "--", *command]
+            sudo_password = self._sudo_password + "\n"
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         process = subprocess.Popen(
             command,
             cwd=cwd,
             env=env,
+            stdin=subprocess.PIPE if sudo_password is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -278,6 +385,9 @@ class NeoPOSInstaller(ctk.CTk):
             bufsize=1,
             creationflags=creationflags,
         )
+        if sudo_password is not None and process.stdin is not None:
+            process.stdin.write(sudo_password)
+            process.stdin.close()
         if process.stdout is not None:
             for line in process.stdout:
                 line = line.rstrip()
@@ -601,8 +711,9 @@ class NeoPOSInstaller(ctk.CTk):
             if not image_name or not archive:
                 raise RuntimeError("release-images.json contiene una imagen incompleta.")
 
-            inspect = subprocess.run(
-                [docker_cli, "image", "inspect", image_name],
+            inspect = self.run_docker_process(
+                docker_cli,
+                ["image", "inspect", image_name],
                 capture_output=True,
                 text=True,
             )
@@ -622,9 +733,11 @@ class NeoPOSInstaller(ctk.CTk):
                 f"[IMAGE] Cargando {name}..."
             ))
             load_command = [docker_cli, "load", "--input", archive_path]
-            if platform.system() == "Linux" and os.geteuid() != 0:
-                load_command.insert(0, "sudo")
-            returncode = self.run_streaming_process(load_command, cwd=install_dir)
+            returncode = self.run_streaming_process(
+                load_command,
+                cwd=install_dir,
+                privileged=self._docker_requires_sudo,
+            )
             if returncode != 0:
                 raise RuntimeError(f"No se pudo cargar la imagen {image_name}.")
 
@@ -702,24 +815,27 @@ class NeoPOSInstaller(ctk.CTk):
             if not os.path.isfile(source):
                 raise RuntimeError(f"Falta un archivo necesario para el runtime Linux: {source}")
 
-        subprocess.run(
-            ["sudo", "install", "-d", "-o", "root", "-g", "root", "-m", "0750", LINUX_RUNTIME_DIR],
+        self.run_process(
+            ["install", "-d", "-o", "root", "-g", "root", "-m", "0750", LINUX_RUNTIME_DIR],
+            privileged=True,
             check=True,
         )
-        subprocess.run(
+        self.run_process(
             [
-                "sudo", "install", "-d", "-o", "root", "-g", "root", "-m", "0750",
+                "install", "-d", "-o", "root", "-g", "root", "-m", "0750",
                 os.path.join(LINUX_RUNTIME_DIR, "local", "backend"),
             ],
+            privileged=True,
             check=True,
         )
         for source_name, destination_name, mode in runtime_files:
-            subprocess.run(
+            self.run_process(
                 [
-                    "sudo", "install", "-o", "root", "-g", "root", "-m", mode,
+                    "install", "-o", "root", "-g", "root", "-m", mode,
                     os.path.join(install_dir, source_name),
                     os.path.join(LINUX_RUNTIME_DIR, destination_name),
                 ],
+                privileged=True,
                 check=True,
             )
 
@@ -748,13 +864,22 @@ WantedBy=multi-user.target
             unit_file.write(unit)
             unit_path = unit_file.name
         try:
-            subprocess.run(
-                ["sudo", "install", "-o", "root", "-g", "root", "-m", "0644", unit_path, LINUX_SYSTEMD_UNIT],
+            self.run_process(
+                ["install", "-o", "root", "-g", "root", "-m", "0644", unit_path, LINUX_SYSTEMD_UNIT],
+                privileged=True,
                 check=True,
             )
-            subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
-            subprocess.run(["sudo", "systemctl", "enable", "neopos-local.service"], check=True)
-            subprocess.run(["sudo", "systemctl", "restart", "neopos-local.service"], check=True)
+            self.run_process(["systemctl", "daemon-reload"], privileged=True, check=True)
+            self.run_process(
+                ["systemctl", "enable", "neopos-local.service"],
+                privileged=True,
+                check=True,
+            )
+            self.run_process(
+                ["systemctl", "restart", "neopos-local.service"],
+                privileged=True,
+                check=True,
+            )
         finally:
             try:
                 os.remove(unit_path)
@@ -832,8 +957,13 @@ WantedBy=multi-user.target
         return None
 
     def ensure_docker_ready(self, docker_cli):
-        """Start Docker Desktop when needed and wait for a usable daemon."""
-        if platform.system() == "Windows":
+        """Start the platform Docker service and wait for a usable daemon."""
+        system = platform.system()
+        if system == "Linux":
+            self.ensure_linux_docker_ready(docker_cli)
+            return
+
+        if system == "Windows":
             docker_info = subprocess.run(
                 [docker_cli, "info"], capture_output=True, text=True
             )
@@ -899,6 +1029,83 @@ WantedBy=multi-user.target
             f"Detalle: {details}"
         )
 
+    def ensure_linux_docker_ready(self, docker_cli):
+        """Start Docker Engine and use sudo when the socket is not user-accessible."""
+        direct_info = subprocess.run(
+            [docker_cli, "info"], capture_output=True, text=True
+        )
+        if direct_info.returncode == 0:
+            self._docker_requires_sudo = False
+            self.ensure_docker_compose_available(docker_cli)
+            self.after(0, lambda: self.append_log("[+] Docker Engine disponible."))
+            return
+
+        self.ensure_linux_admin_access()
+        self.after(0, lambda: self.append_log(
+            "[*] Docker Engine no está disponible para el usuario actual; "
+            "intentando iniciar docker.service con permisos de administrador..."
+        ))
+
+        start_attempts = []
+        for command in (["systemctl", "start", "docker"], ["service", "docker", "start"]):
+            started = self.run_process(
+                list(command),
+                privileged=True,
+                capture_output=True,
+                text=True,
+            )
+            if started.returncode == 0:
+                break
+            start_attempts.append((started.stderr or started.stdout).strip())
+
+        self._docker_requires_sudo = os.geteuid() != 0
+        attempts = max(1, LINUX_DOCKER_READY_TIMEOUT_SECONDS // 2)
+        last_result = direct_info
+        for attempt in range(1, attempts + 1):
+            last_result = self.run_docker_process(
+                docker_cli,
+                ["info"],
+                capture_output=True,
+                text=True,
+            )
+            if last_result.returncode == 0:
+                self.ensure_docker_compose_available(docker_cli)
+                self.after(0, lambda: self.append_log(
+                    "[+] Docker Engine disponible con permisos de administrador."
+                ))
+                return
+
+            self.after(0, lambda attempt=attempt: self.append_log(
+                f"[*] Esperando a Docker Engine... ({attempt}/{attempts})"
+            ))
+            time.sleep(2)
+
+        details = (last_result.stderr or last_result.stdout).strip()
+        service_details = next((value for value in reversed(start_attempts) if value), "")
+        if service_details:
+            details = f"{details} Servicio: {service_details}".strip()
+        raise RuntimeError(
+            "Docker Engine está instalado, pero el daemon no respondió después de "
+            f"{LINUX_DOCKER_READY_TIMEOUT_SECONDS} segundos. "
+            "Verifica que docker.service exista y que el usuario tenga permisos sudo. "
+            f"Detalle: {details}"
+        )
+
+    def ensure_docker_compose_available(self, docker_cli):
+        compose = self.run_docker_process(
+            docker_cli,
+            ["compose", "version"],
+            capture_output=True,
+            text=True,
+        )
+        if compose.returncode != 0:
+            details = (compose.stderr or compose.stdout).strip()
+            raise RuntimeError(
+                "Docker Engine está activo, pero Docker Compose v2 no está disponible. "
+                "Instala el complemento docker-compose-v2 y vuelve a intentarlo. "
+                f"Detalle: {details}"
+            )
+
     @staticmethod
     def _trim_process_output(value, limit=12000):
         value = (value or "").strip()
@@ -920,8 +1127,9 @@ WantedBy=multi-user.target
         last_details = ""
 
         while time.monotonic() < deadline:
-            status = subprocess.run(
+            status = self.run_process(
                 compose + ["ps", "--services", "--status", "running"],
+                privileged=self._docker_requires_sudo,
                 cwd=os.path.dirname(compose_file),
                 capture_output=True,
                 text=True,
@@ -961,16 +1169,18 @@ WantedBy=multi-user.target
                 ))
             time.sleep(2)
 
-        diagnostics = subprocess.run(
+        diagnostics = self.run_process(
             compose + ["ps", "-a"],
+            privileged=self._docker_requires_sudo,
             cwd=os.path.dirname(compose_file),
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
         )
-        logs = subprocess.run(
+        logs = self.run_process(
             compose + ["logs", "--tail", "80"],
+            privileged=self._docker_requires_sudo,
             cwd=os.path.dirname(compose_file),
             capture_output=True,
             text=True,
@@ -1095,7 +1305,7 @@ WantedBy=multi-user.target
 
         docker_cli = self.find_docker_cli()
         if not docker_cli:
-            raise RuntimeError("No se encontró docker.exe para respaldar la base de datos antes de actualizar.")
+            raise RuntimeError("No se encontró Docker para respaldar la base de datos antes de actualizar.")
 
         backup_dir = os.path.join(install_dir, "backups")
         os.makedirs(backup_dir, exist_ok=True)
@@ -1104,8 +1314,9 @@ WantedBy=multi-user.target
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         backup_file = os.path.join(backup_dir, f"pos-{timestamp}.sql")
 
-        start_db = subprocess.run(
-            [docker_cli, "compose", "-p", "neopos-local", "-f", compose_file, "up", "-d", "postgres"],
+        start_db = self.run_docker_process(
+            docker_cli,
+            ["compose", "-p", "neopos-local", "-f", compose_file, "up", "-d", "postgres"],
             capture_output=True,
             text=True,
         )
@@ -1117,9 +1328,9 @@ WantedBy=multi-user.target
 
         dump = None
         for _ in range(30):
-            dump = subprocess.run(
+            dump = self.run_docker_process(
+                docker_cli,
                 [
-                    docker_cli,
                     "compose",
                     "-p",
                     "neopos-local",
@@ -1211,6 +1422,9 @@ WantedBy=multi-user.target
             self.after(0, lambda: self.append_log(f"[*] SO detectado: {system}"))
 
             self.verify_windows_virtualization()
+            if system == "Linux":
+                update_status("Solicitando permisos de administrador para Linux...")
+                self.ensure_linux_admin_access()
 
             docker_cli = self.find_docker_cli()
             docker_available = False
@@ -1237,8 +1451,16 @@ WantedBy=multi-user.target
                         )
             elif system == "Linux" and not docker_available:
                     update_status("Instalando Docker Engine mediante apt...")
-                    subprocess.run(["sudo", "apt-get", "update"], check=True)
-                    subprocess.run(["sudo", "apt-get", "install", "-y", "docker.io", "docker-compose-v2"], check=True)
+                    self.run_process(
+                        ["apt-get", "update"],
+                        privileged=True,
+                        check=True,
+                    )
+                    self.run_process(
+                        ["apt-get", "install", "-y", "docker.io", "docker-compose-v2"],
+                        privileged=True,
+                        check=True,
+                    )
                     docker_cli = self.find_docker_cli()
                     if not docker_cli:
                         raise RuntimeError("Docker se instaló, pero no se encontró el comando docker.")
@@ -1380,6 +1602,8 @@ WantedBy=multi-user.target
             self.after(0, lambda error=str(e): self.finish_with_error(
                 "Error de Instalación", f"Hubo un problema: {error}"
             ))
+        finally:
+            self.clear_linux_admin_access()
 
     def install_app(self):
         response = messagebox.askyesno(
@@ -1427,6 +1651,9 @@ WantedBy=multi-user.target
 
             update_status(f"Verificando instalación existente en {install_dir}...")
             self.verify_windows_virtualization()
+            if platform.system() == "Linux":
+                update_status("Solicitando permisos de administrador para Linux...")
+                self.ensure_linux_admin_access()
             docker_cli = self.find_docker_cli()
             if not docker_cli:
                 raise RuntimeError("No se encontró Docker. Usa primero el botón de instalación.")
@@ -1478,6 +1705,8 @@ WantedBy=multi-user.target
                 "Error al iniciar NeoPOS",
                 f"No se pudieron iniciar los servicios: {message}",
             ))
+        finally:
+            self.clear_linux_admin_access()
 
     def finish_installation(self):
         self.task_running = False

@@ -48,6 +48,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         pip install customtkinter
+    - name: Test Linux installer behavior
+      run: python -m unittest discover -s tests -v
     - name: Validate and stamp production package
       env:
         RELEASE_VERSION: ${{ github.ref_name }}

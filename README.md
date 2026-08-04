@@ -184,6 +184,15 @@ El instalador Windows solicita permisos de administrador mediante UAC desde el
 inicio. Esto permite crear la tarea de recuperación automática de NeoPOS sin
 tener que ejecutarlo manualmente con clic derecho como administrador.
 
+En Linux, el instalador solicita la contraseña `sudo` una sola vez al comenzar
+la instalación o reparación. El campo está enmascarado y la contraseña se pasa
+a `sudo` por la entrada estándar: no se incorpora a los argumentos del proceso,
+no se escribe en los logs ni se guarda en disco. Si Docker Engine está detenido,
+el instalador intenta iniciar `docker.service`; si el usuario no tiene acceso a
+`/var/run/docker.sock`, las operaciones Docker necesarias se ejecutan con esos
+permisos administrativos. Los mensajes y tiempos de espera de Docker Desktop se
+reservan exclusivamente para Windows.
+
 Las actualizaciones conservan los volúmenes nombrados `postgres-data` y
 `minio-data`, crean un respaldo antes de reemplazar archivos y consultan
 `neopos-local-manifest.json` antes de bajar el ZIP completo. El instalador no
