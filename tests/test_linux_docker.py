@@ -117,7 +117,8 @@ class LinuxDockerTests(unittest.TestCase):
             backend_dir = install_dir / "local" / "backend"
             backend_dir.mkdir(parents=True)
             (backend_dir / ".env.example").write_text(
-                "ADMIN_EMAIL=admin@pos.local\nCASHIER_EMAIL=cajero@neopos.com\n",
+                "ADMIN_EMAIL=admin@pos.local\nCASHIER_EMAIL=cajero@neopos.com\n"
+                "SYNC_REMOTE_URL=https://api-neopos-cloud.prismabitetesting.xyz\n",
                 encoding="utf-8",
             )
             visible_dir = Path(temporary_dir) / "Descargas"
@@ -128,6 +129,7 @@ class LinuxDockerTests(unittest.TestCase):
             self.assertRegex(values["ADMIN_EMAIL"], r"^admin-[0-9a-f]{8}@local\.neopos$")
             self.assertRegex(values["CASHIER_EMAIL"], r"^cajero-[0-9a-f]{8}@local\.neopos$")
             self.assertNotEqual(values["ADMIN_PASSWORD"], values["CASHIER_PASSWORD"])
+            self.assertEqual(values["SYNC_REMOTE_URL"], "https://api.neopos.com.co")
             credentials_file = visible_dir / "admin-credentials.txt"
             self.assertTrue(credentials_file.is_file())
             self.assertEqual(installer.credentials_path, str(credentials_file))

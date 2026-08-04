@@ -35,6 +35,7 @@ LINUX_DOCKER_READY_TIMEOUT_SECONDS = 30
 LOCAL_SERVICES_READY_TIMEOUT_SECONDS = 180
 BUNDLED_RELEASE_FILENAME = "neopos-local.zip"
 DEFAULT_CLOUD_URL = "https://api.neopos.com.co"
+LEGACY_CLOUD_URL = "https://api-neopos-cloud.prismabitetesting.xyz"
 REQUIRED_RELEASE_MEMBERS = {
     "start.ps1",
     "docker-compose.yml",
@@ -722,6 +723,13 @@ class NeoPOSInstaller(ctk.CTk):
         # non-placeholder passwords are preserved so a package update cannot
         # invalidate the current administrator or cashier account.
         backend_values = self._read_env_file(backend_env)
+        # The legacy tunnel remains accepted by Cloud during the migration,
+        # but installations must converge on the canonical endpoint. This is
+        # safe for existing databases: only the remote URL is replaced.
+        if backend_values.get("SYNC_REMOTE_URL", "").strip().rstrip("/") == LEGACY_CLOUD_URL:
+            self._write_env_value(backend_env, "SYNC_REMOTE_URL", DEFAULT_CLOUD_URL)
+            backend_values["SYNC_REMOTE_URL"] = DEFAULT_CLOUD_URL
+            self.append_log("[+] URL de NeoPOS Cloud migrada al dominio oficial.")
         for key, size in (("ADMIN_PASSWORD", 24), ("CASHIER_PASSWORD", 24)):
             current = backend_values.get(key, "").strip()
             if not current or current.startswith("GENERATED_"):
