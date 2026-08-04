@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.1.31",
+  "app_version": "v0.1.32",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Corrige el flujo de vinculación de licencias con NeoPOS Cloud permitiendo la activación inicial sin depender de un token JWT local previo. Incluye fallbacks de seguridad en la configuración local.",
+  "release_notes": "Alinea automáticamente las credenciales de PostgreSQL (DATABASE_URL y POSTGRES_PASSWORD) en el script de arranque para prevenir fallos de autenticación SASL (SQLSTATE 28P01) al actualizar instalaciones existentes.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
