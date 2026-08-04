@@ -34,7 +34,7 @@ DOCKER_READY_TIMEOUT_SECONDS = 180
 LINUX_DOCKER_READY_TIMEOUT_SECONDS = 30
 LOCAL_SERVICES_READY_TIMEOUT_SECONDS = 180
 BUNDLED_RELEASE_FILENAME = "neopos-local.zip"
-DEFAULT_CLOUD_URL = "https://api-neopos-cloud.prismabitetesting.xyz"
+DEFAULT_CLOUD_URL = "https://api.neopos.com.co"
 REQUIRED_RELEASE_MEMBERS = {
     "start.ps1",
     "docker-compose.yml",
