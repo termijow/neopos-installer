@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.1.32",
+  "app_version": "v0.1.33",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Alinea automáticamente las credenciales de PostgreSQL (DATABASE_URL y POSTGRES_PASSWORD) en el script de arranque para prevenir fallos de autenticación SASL (SQLSTATE 28P01) al actualizar instalaciones existentes.",
+  "release_notes": "Añade exportación corporativa Excel (XLSX), auto-alineación de credenciales PostgreSQL y correcciones del asistente de vinculación con NeoPOS Cloud.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
