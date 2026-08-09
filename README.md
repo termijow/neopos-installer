@@ -17,6 +17,7 @@ Docker.
 
 | Versión | Resumen incluido en la release |
 |---|---|
+| `v0.3.7` | Muestra en Configuración el resumen de cambios de la actualización antes de descargar el instalador oficial. |
 | `v0.3.6` | Muestra la versión instalada al pie de Configuración, incorpora un estado local de versión y publica automáticamente estas notas en GitHub. |
 | `v0.3.5` | Publica una versión estable para probar el aviso automático de actualización desde `v0.3.4`, conservando las protecciones de licencia, backups, telemetría e IA. |
 | `v0.3.4` | Protege la licencia ya instalada, elimina reinicios accidentales del asistente, restaura backups transaccionalmente, prueba el Error Catcher central y valida las rutas generadas por la IA. |
@@ -32,7 +33,7 @@ los restaurantes.
 
 Los siguientes comandos se ejecutan desde la máquina de desarrollo que tiene
 acceso al repositorio privado `neopos-local`. Cada release debe usar un número
-estable con el formato exacto `vMAJOR.MINOR.PATCH`, por ejemplo `v0.3.6`.
+estable con el formato exacto `vMAJOR.MINOR.PATCH`, por ejemplo `v0.3.7`.
 
 ### 0. Definir la versión y su resumen
 
@@ -48,10 +49,10 @@ correctamente si la migración es aditiva o incompatible. Ejemplo:
 
 ```json
 {
-  "app_version": "v0.3.6",
+  "app_version": "v0.3.7",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Muestra la versión instalada al pie de Configuración."
+  "release_notes": "Muestra el resumen de cambios antes de descargar una actualización."
 }
 ```
 
@@ -82,7 +83,7 @@ docker compose config --quiet
 
 ```bash
 cd /ruta/neopos-local
-RELEASE_VERSION=v0.3.6 python3 scripts/build_release.py
+RELEASE_VERSION=v0.3.7 python3 scripts/build_release.py
 ```
 
 Este script utiliza el código privado únicamente como contexto de compilación:
@@ -138,7 +139,7 @@ Desde `neopos-installer`:
 
 ```bash
 cd /ruta/neopos-installer
-RELEASE_VERSION=v0.3.6 python3 scripts/stamp_neopos_release.py \
+RELEASE_VERSION=v0.3.7 python3 scripts/stamp_neopos_release.py \
   neopos-local.zip neopos-local-manifest.json
 python3 scripts/render_release_notes.py \
   neopos-local-manifest.json /tmp/neopos-release-notes.md
@@ -150,9 +151,9 @@ git status
 
 git add README.md main.py build_windows.bat .github/workflows/build.yml \
   scripts/ tests/ neopos-local.zip neopos-local-manifest.json
-git commit -m "release: v0.3.6"
-git tag -a v0.3.6 -m "Release v0.3.6"
-git push origin main v0.3.6
+git commit -m "release: v0.3.7"
+git tag -a v0.3.7 -m "Release v0.3.7"
+git push origin main v0.3.7
 ```
 
 El tag activa `.github/workflows/build.yml`. GitHub Actions:
@@ -168,8 +169,8 @@ El tag activa `.github/workflows/build.yml`. GitHub Actions:
 ### 6. Validar la publicación
 
 ```bash
-curl -fL -o /tmp/NeoPOS-Installer-v0.3.6.exe \
-  https://github.com/termijow/neopos-installer/releases/download/v0.3.6/NeoPOS-Installer-v0.3.6.exe
+curl -fL -o /tmp/NeoPOS-Installer-v0.3.7.exe \
+  https://github.com/termijow/neopos-installer/releases/download/v0.3.7/NeoPOS-Installer-v0.3.7.exe
 
 curl -fL -o /tmp/neopos-local.zip \
   https://github.com/termijow/neopos-installer/releases/latest/download/neopos-local.zip

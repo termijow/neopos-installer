@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.3.6",
+  "app_version": "v0.3.7",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Muestra la versión instalada al pie de Configuración y añade un endpoint local de estado que no depende de Internet. Documenta el historial de versiones y publica automáticamente en GitHub el resumen incluido en cada manifiesto.",
+  "release_notes": "Muestra en Configuración el resumen de cambios de cada actualización estable antes de descargarla y aclara que el botón abre el instalador oficial que conserva los datos locales.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
