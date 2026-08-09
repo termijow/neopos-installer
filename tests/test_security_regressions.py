@@ -24,6 +24,13 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertIn('["sudo", "-S", "-k", "-p", "", "--", "true"]', source)
         self.assertNotIn('command.append(self._sudo_password)', source)
 
+    def test_updates_preserve_data_and_refresh_runtime_version(self):
+        source = (ROOT / "main.py").read_text(encoding="utf-8")
+        self.assertIn('"APP_VERSION", installed_version', source)
+        self.assertIn('"UPDATE_MANIFEST_URL",', source)
+        self.assertIn("PERSISTENT_VOLUME_MOUNTS", source)
+        self.assertNotIn('"down", "-v"', source)
+
 
 if __name__ == "__main__":
     unittest.main()
