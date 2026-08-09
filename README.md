@@ -13,10 +13,51 @@ Docker.
 - `neopos-installer`: repositorio público con el instalador y el paquete binario de producción.
 - `neopos-cloud`: panel cloud y página que enlaza al instalador estable.
 
+## Historial de versiones estables
+
+| Versión | Resumen incluido en la release |
+|---|---|
+| `v0.3.6` | Muestra la versión instalada al pie de Configuración, incorpora un estado local de versión y publica automáticamente estas notas en GitHub. |
+| `v0.3.5` | Publica una versión estable para probar el aviso automático de actualización desde `v0.3.4`, conservando las protecciones de licencia, backups, telemetría e IA. |
+| `v0.3.4` | Protege la licencia ya instalada, elimina reinicios accidentales del asistente, restaura backups transaccionalmente, prueba el Error Catcher central y valida las rutas generadas por la IA. |
+| `v0.3.3` | Añade monitoreo central de errores, panel de vencimientos y renovaciones, comprobantes PDF y correcciones del panel QA y la sesión Cloud. |
+| `v0.3.2` | Añade Cortesías y Consumo de Empleado, backups funcionales, fallback del asistente IA e idempotencia para evitar facturas duplicadas. |
+
+Este historial es informativo. La fuente que consume el actualizador es
+`neopos-local-manifest.json`, incluido también dentro de `neopos-local.zip`.
+Las versiones preliminares (`alpha`, `beta`, `rc` o `nightly`) no se ofrecen a
+los restaurantes.
+
 ## Proceso para publicar una release
 
 Los siguientes comandos se ejecutan desde la máquina de desarrollo que tiene
-acceso al repositorio privado `neopos-local`.
+acceso al repositorio privado `neopos-local`. Cada release debe usar un número
+estable con el formato exacto `vMAJOR.MINOR.PATCH`, por ejemplo `v0.3.6`.
+
+### 0. Definir la versión y su resumen
+
+Antes de compilar, se actualizan en `neopos-local`:
+
+- `local/backend/internal/platform/config/config.go`, con la versión por defecto;
+- `local/backend/.env.example`, con `APP_VERSION`;
+- `release-manifest.json`, con `app_version` y `release_notes`.
+
+`release_notes` debe explicar en lenguaje de usuario qué agrega o corrige esa
+versión. No se debe dejar el texto genérico. También se debe indicar
+correctamente si la migración es aditiva o incompatible. Ejemplo:
+
+```json
+{
+  "app_version": "v0.3.6",
+  "database_migration": "additive",
+  "breaking_changes": false,
+  "release_notes": "Muestra la versión instalada al pie de Configuración."
+}
+```
+
+El workflow convierte este mismo resumen en el cuerpo visible de la release de
+GitHub. Así el actualizador, el ZIP, el manifiesto público y la página de la
+release muestran la misma información.
 
 ### 1. Validar NeoPOS Local
 
@@ -41,7 +82,7 @@ docker compose config --quiet
 
 ```bash
 cd /ruta/neopos-local
-RELEASE_VERSION=v0.1.15 python3 scripts/build_release.py
+RELEASE_VERSION=v0.3.6 python3 scripts/build_release.py
 ```
 
 Este script utiliza el código privado únicamente como contexto de compilación:
@@ -63,6 +104,7 @@ o `frontend/src/`.
 ```bash
 unzip -l releases/neopos-local.zip
 unzip -t releases/neopos-local.zip
+unzip -p releases/neopos-local.zip release-manifest.json
 ```
 
 Debe contener imágenes como:
@@ -96,15 +138,21 @@ Desde `neopos-installer`:
 
 ```bash
 cd /ruta/neopos-installer
-python3 -m py_compile main.py scripts/stamp_neopos_release.py
+RELEASE_VERSION=v0.3.6 python3 scripts/stamp_neopos_release.py \
+  neopos-local.zip neopos-local-manifest.json
+python3 scripts/render_release_notes.py \
+  neopos-local-manifest.json /tmp/neopos-release-notes.md
+python3 -m py_compile main.py scripts/stamp_neopos_release.py \
+  scripts/render_release_notes.py
+python3 -m unittest discover -s tests -v
 git diff --check
 git status
 
 git add README.md main.py build_windows.bat .github/workflows/build.yml \
-  scripts/stamp_neopos_release.py neopos-local.zip
-git commit -m "release: v0.1.15"
-git tag v0.1.15
-git push origin main v0.1.15
+  scripts/ tests/ neopos-local.zip neopos-local-manifest.json
+git commit -m "release: v0.3.6"
+git tag -a v0.3.6 -m "Release v0.3.6"
+git push origin main v0.3.6
 ```
 
 El tag activa `.github/workflows/build.yml`. GitHub Actions:
@@ -120,8 +168,8 @@ El tag activa `.github/workflows/build.yml`. GitHub Actions:
 ### 6. Validar la publicación
 
 ```bash
-curl -fL -o /tmp/NeoPOS-Installer-v0.1.15.exe \
-  https://github.com/termijow/neopos-installer/releases/download/v0.1.15/NeoPOS-Installer-v0.1.15.exe
+curl -fL -o /tmp/NeoPOS-Installer-v0.3.6.exe \
+  https://github.com/termijow/neopos-installer/releases/download/v0.3.6/NeoPOS-Installer-v0.3.6.exe
 
 curl -fL -o /tmp/neopos-local.zip \
   https://github.com/termijow/neopos-installer/releases/latest/download/neopos-local.zip
