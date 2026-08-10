@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -6,6 +7,7 @@ import sys
 import tempfile
 import types
 import unittest
+import zipfile
 from unittest import mock
 
 
@@ -138,6 +140,79 @@ class LinuxDockerTests(unittest.TestCase):
             self.assertIn(values["CASHIER_EMAIL"], content)
             if os.name != "nt":
                 self.assertEqual(credentials_file.stat().st_mode & 0o777, 0o600)
+
+    def test_prepare_update_stops_before_changes_when_backup_fails(self):
+        installer = installer_without_ui()
+        compose = "postgres-data:/var/lib/postgresql/data\nminio-data:/data\n"
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            install_dir = Path(temporary_dir) / "NeoPOS"
+            install_dir.mkdir()
+            (install_dir / "docker-compose.yml").write_text(compose, encoding="utf-8")
+            (install_dir / "release-manifest.json").write_text(
+                json.dumps({"app_version": "v0.3.7", "database_migration": "additive"}), encoding="utf-8"
+            )
+            archive_path = Path(temporary_dir) / "release.zip"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("docker-compose.yml", compose)
+                archive.writestr("release-manifest.json", json.dumps({"app_version": "v0.3.8", "database_migration": "additive"}))
+            installer.backup_database = mock.Mock(side_effect=RuntimeError("pg_dump failed"))
+
+            with zipfile.ZipFile(archive_path, "r") as archive:
+                with self.assertRaisesRegex(RuntimeError, "pg_dump failed"):
+                    installer.prepare_update(str(install_dir), archive)
+
+            self.assertEqual((install_dir / "docker-compose.yml").read_text(encoding="utf-8"), compose)
+            self.assertFalse((install_dir / "release-images.json").exists())
+
+    @mock.patch.object(installer_main.time, "sleep", return_value=None)
+    def test_failed_pg_dump_does_not_publish_a_backup(self, _sleep):
+        installer = installer_without_ui()
+        installer.find_docker_cli = mock.Mock(return_value="/usr/bin/docker")
+        compose_result = subprocess.CompletedProcess([], 0, b"", b"")
+        failed_dump = subprocess.CompletedProcess([], 1, b"", b"pg_dump failed")
+        installer.run_docker_process = mock.Mock(side_effect=[compose_result] + [failed_dump] * 30)
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            install_dir = Path(temporary_dir) / "NeoPOS"
+            install_dir.mkdir()
+            (install_dir / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "No se pudo crear el respaldo"):
+                installer.backup_database(str(install_dir))
+
+            backups = list((install_dir / "backups").glob("*"))
+            self.assertEqual(backups, [])
+
+    def test_existing_runtime_configuration_is_preserved_during_update(self):
+        installer = installer_without_ui()
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            install_dir = Path(temporary_dir) / "NeoPOS"
+            backend_dir = install_dir / "local" / "backend"
+            backend_dir.mkdir(parents=True)
+            (install_dir / ".env").write_text(
+                "POSTGRES_PASSWORD=keep-postgres\nMINIO_ROOT_USER=keep-user\nMINIO_ROOT_PASSWORD=keep-minio\nCUSTOM_ROOT=value\n",
+                encoding="utf-8",
+            )
+            (backend_dir / ".env").write_text(
+                "DATABASE_URL=postgres://custom\nADMIN_EMAIL=owner@example.com\nADMIN_PASSWORD=keep-admin-password\n"
+                "CASHIER_EMAIL=cashier@example.com\nCASHIER_PASSWORD=keep-cashier-password\nCUSTOM_SETTING=keep-me\n",
+                encoding="utf-8",
+            )
+            (install_dir / "release-manifest.json").write_text(
+                json.dumps({"app_version": "v0.3.8"}), encoding="utf-8"
+            )
+
+            installer.ensure_runtime_environment(str(install_dir))
+
+            root_values = installer._read_env_file(str(install_dir / ".env"))
+            backend_values = installer._read_env_file(str(backend_dir / ".env"))
+            self.assertEqual(root_values["POSTGRES_PASSWORD"], "keep-postgres")
+            self.assertEqual(root_values["CUSTOM_ROOT"], "value")
+            self.assertEqual(backend_values["DATABASE_URL"], "postgres://custom")
+            self.assertEqual(backend_values["ADMIN_PASSWORD"], "keep-admin-password")
+            self.assertEqual(backend_values["CASHIER_PASSWORD"], "keep-cashier-password")
+            self.assertEqual(backend_values["CUSTOM_SETTING"], "keep-me")
+            self.assertEqual(backend_values["APP_VERSION"], "0.3.8")
+            self.assertEqual(backend_values["UPDATE_MANIFEST_URL"], installer_main.DEFAULT_UPDATE_MANIFEST_URL)
 
 
 if __name__ == "__main__":

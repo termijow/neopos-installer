@@ -1,9 +1,16 @@
 {
   "schema_version": 1,
   "app_version": "v0.3.7",
+  "version": "v0.3.7",
   "database_migration": "additive",
   "breaking_changes": false,
   "release_notes": "Muestra en Configuración el resumen de cambios de cada actualización estable antes de descargarla y aclara que el botón abre el instalador oficial que conserva los datos locales.",
+  "notes": "Muestra en Configuración el resumen de cambios de cada actualización estable antes de descargarla y aclara que el botón abre el instalador oficial que conserva los datos locales.",
+  "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
+  "download_urls": {
+    "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
+    "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux"
+  },
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",

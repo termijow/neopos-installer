@@ -117,6 +117,13 @@ def build_manifest(archive: zipfile.ZipFile, version: str) -> dict:
     except (KeyError, UnicodeDecodeError, json.JSONDecodeError):
         pass
     manifest["app_version"] = version
+    manifest["version"] = version
+    manifest["notes"] = manifest.get("release_notes", "")
+    manifest["download_url"] = "https://github.com/termijow/neopos-installer/releases/latest"
+    manifest["download_urls"] = {
+        "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
+        "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
+    }
     return manifest
 
 

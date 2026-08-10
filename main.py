@@ -1427,9 +1427,29 @@ WantedBy=multi-user.target
             details = dump.stderr.decode("utf-8", errors="replace").strip() if dump else "sin respuesta de pg_dump"
             raise RuntimeError(f"No se pudo crear el respaldo de PostgreSQL. {details}")
 
-        descriptor = os.open(backup_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "wb") as backup:
-            backup.write(dump.stdout)
+        descriptor, partial_backup = tempfile.mkstemp(
+            prefix=f".pos-{timestamp}-", suffix=".sql.partial", dir=backup_dir
+        )
+        try:
+            if platform.system() != "Windows":
+                os.chmod(partial_backup, 0o600)
+            with os.fdopen(descriptor, "wb") as backup:
+                backup.write(dump.stdout)
+                backup.flush()
+                os.fsync(backup.fileno())
+            if os.path.getsize(partial_backup) != len(dump.stdout):
+                raise RuntimeError("El respaldo quedó incompleto en el disco.")
+            os.replace(partial_backup, backup_file)
+        except Exception as error:
+            try:
+                if os.path.exists(partial_backup):
+                    os.unlink(partial_backup)
+            except OSError:
+                pass
+            raise RuntimeError(
+                "No se pudo guardar de forma segura el respaldo; la actualización fue cancelada. "
+                f"{error}"
+            ) from error
         self.after(0, lambda: self.append_log(f"[+] Respaldo de base de datos creado: {backup_file}"))
 
     def prepare_update(self, install_dir, zip_ref):
