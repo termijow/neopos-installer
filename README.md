@@ -17,6 +17,7 @@ Docker.
 
 | Versión | Resumen incluido en la release |
 |---|---|
+| `v0.3.10` | Restaura la protección de licencia y asistente de vinculación (LicenseGuard) en el inicio de la aplicación, conservando los reportes de factura electrónica, sesiones de inventario y pagos fiados. |
 | `v0.3.9` | Soporte para reportes y exportación PDF de facturas electrónicas, gestión y reportes de sesiones de inventario con movimientos auditados, y soporte para pagos fiados con mejor gestión de métodos de pago. |
 | `v0.3.8` | Añade pagos divididos por múltiples medios, cortesías y comidas de empleados con autorización e inventario auditado, flujo completo de factura electrónica Factus/DIAN (CUFE, correo, estado y PDF), y actualizaciones seguras con backup obligatorio y conservación de datos. |
 | `v0.3.7` | Muestra en Configuración el resumen de cambios de la actualización antes de descargar el instalador oficial. |
