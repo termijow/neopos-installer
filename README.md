@@ -17,6 +17,11 @@ Docker.
 
 | Versión | Resumen incluido en la release |
 |---|---|
+| `v0.3.12` | Corrige la persistencia estable del identificador de hardware usado por la sincronización, incorpora monitoreo opcional con Sentry y mejora la validación segura de licencias y rutas de configuración. |
+| `v0.3.11` | Valida credenciales remotas, conserva identificadores de ítems de venta y envía comprobaciones periódicas de salud del nodo. |
+| `v0.3.10` | Restaura la protección de licencia y asistente de vinculación (LicenseGuard) en el inicio de la aplicación, conservando los reportes de factura electrónica, sesiones de inventario y pagos fiados. |
+| `v0.3.9` | Soporte para reportes y exportación PDF de facturas electrónicas, gestión y reportes de sesiones de inventario con movimientos auditados, y soporte para pagos fiados con mejor gestión de métodos de pago. |
+| `v0.3.8` | Añade pagos divididos por múltiples medios, cortesías y comidas de empleados con autorización e inventario auditado, flujo completo de factura electrónica Factus/DIAN (CUFE, correo, estado y PDF), y actualizaciones seguras con backup obligatorio y conservación de datos. |
 | `v0.3.7` | Muestra en Configuración el resumen de cambios de la actualización antes de descargar el instalador oficial. |
 | `v0.3.6` | Muestra la versión instalada al pie de Configuración, incorpora un estado local de versión y publica automáticamente estas notas en GitHub. |
 | `v0.3.5` | Publica una versión estable para probar el aviso automático de actualización desde `v0.3.4`, conservando las protecciones de licencia, backups, telemetría e IA. |
