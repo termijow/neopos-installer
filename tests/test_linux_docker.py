@@ -120,7 +120,7 @@ class LinuxDockerTests(unittest.TestCase):
             backend_dir.mkdir(parents=True)
             (backend_dir / ".env.example").write_text(
                 "ADMIN_EMAIL=admin@pos.local\nCASHIER_EMAIL=cajero@neopos.com\n"
-                "SYNC_REMOTE_URL=https://api-neopos-cloud.prismabitetesting.xyz\n",
+                "SYNC_REMOTE_URL=https://api.neopos.com.co\n",
                 encoding="utf-8",
             )
             visible_dir = Path(temporary_dir) / "Descargas"
