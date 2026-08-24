@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.3.12",
+  "app_version": "v0.4.0",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Corrige la persistencia estable del identificador de hardware usado por la sincronización, incorpora monitoreo opcional con Sentry y mejora la validación segura de licencias y rutas de configuración.",
+  "release_notes": "Panel de domiciliarios y gestión de motos, asignación de nombres y alias a mesas, anulación de ítems con autorización, resiliencia offline ante fallos de conexión y persistencia de configuración en base de datos.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,8 +12,8 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.3.12",
-  "notes": "Corrige la persistencia estable del identificador de hardware usado por la sincronización, incorpora monitoreo opcional con Sentry y mejora la validación segura de licencias y rutas de configuración.",
+  "version": "v0.4.0",
+  "notes": "Panel de domiciliarios y gestión de motos, asignación de nombres y alias a mesas, anulación de ítems con autorización, resiliencia offline ante fallos de conexión y persistencia de configuración en base de datos.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
