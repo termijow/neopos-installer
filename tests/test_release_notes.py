@@ -40,3 +40,21 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(manifest["notes"], "Actualización segura.")
         self.assertTrue(manifest["download_urls"]["windows"].endswith("NeoPOS-Installer.exe"))
         self.assertTrue(manifest["download_urls"]["linux"].endswith("NeoPOS-Installer-Linux"))
+
+    def test_stable_version_policy_filtering(self):
+        from main import NeoPOSInstaller
+
+        # Stable versions (should accept)
+        self.assertTrue(NeoPOSInstaller.is_stable_release_version("v1.0.0"))
+        self.assertTrue(NeoPOSInstaller.is_stable_release_version("v1.2.3"))
+        self.assertTrue(NeoPOSInstaller.is_stable_release_version("v0.1.0"))
+        self.assertTrue(NeoPOSInstaller.is_stable_release_version("v0.4.5"))
+
+        # Unstable / test / .12 versions (should ignore)
+        self.assertFalse(NeoPOSInstaller.is_stable_release_version("v0.1.12"))
+        self.assertFalse(NeoPOSInstaller.is_stable_release_version("v1.0.12"))
+        self.assertFalse(NeoPOSInstaller.is_stable_release_version("v0.4.12"))
+        self.assertFalse(NeoPOSInstaller.is_stable_release_version("v0.1.28-test.20260803"))
+        self.assertFalse(NeoPOSInstaller.is_stable_release_version("v1.0.0-rc1"))
+        self.assertFalse(NeoPOSInstaller.is_stable_release_version("v0.0.1"))
+        self.assertFalse(NeoPOSInstaller.is_stable_release_version(""))

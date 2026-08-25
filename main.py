@@ -4,6 +4,7 @@ import tkinter.simpledialog as simpledialog
 import sys
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -1316,6 +1317,26 @@ WantedBy=multi-user.target
         except zipfile.BadZipFile as error:
             raise RuntimeError(f"El archivo de producción no es un ZIP válido: {error}") from error
 
+    @classmethod
+    def is_stable_release_version(cls, version_str: str) -> bool:
+        """Validate if a version string is considered a stable release.
+        Stable releases must be v1.X.XX or vX.1.XX+, and must ignore unstable builds like vX.X.12 or -test/-rc suffixes.
+        """
+        if not version_str or not isinstance(version_str, str):
+            return False
+        v = version_str.strip().lstrip("v")
+        if re.search(r'(\.12$|-test|-rc|-beta|-alpha)', v, re.IGNORECASE):
+            return False
+        parts = v.split(".")
+        if len(parts) >= 2:
+            try:
+                major = int(parts[0])
+                minor = int(parts[1])
+                return major >= 1 or minor >= 1
+            except ValueError:
+                return False
+        return False
+
     def check_update_before_download(self, install_dir, bundled_manifest=None):
         """Check update compatibility using the embedded release when available."""
         existing_compose = os.path.join(install_dir, "docker-compose.yml")
@@ -1353,6 +1374,12 @@ WantedBy=multi-user.target
             f"[*] Versión instalada: {current_version}; versión disponible: {new_version} "
             f"(migración: {migration_type})"
         ))
+
+        if not self.is_stable_release_version(new_version):
+            self.after(0, lambda: self.append_log(
+                f"[*] La versión {new_version} fue ignorada (la política de estabilidad ignora versiones .12 e inestables)."
+            ))
+            return
 
         if not breaking:
             return
