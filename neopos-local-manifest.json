@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "app_version": "v0.5.0",
+  "app_version": "v0.5.1",
   "database_migration": "additive",
   "breaking_changes": false,
   "release_notes": "Soporte de conectividad local para tablets y terminales secundarias en la misma red Wi-Fi, integración con catálogo mayorista B2B y marketplace de distribuidores con liquidación de comisiones, licenciamiento segmentado NeoPOS y MercadoBarrio, dashboard con métricas reales y filtro de estabilidad para auto-actualizaciones.",
@@ -12,7 +12,7 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.5.0",
+  "version": "v0.5.1",
   "notes": "Soporte de conectividad local para tablets y terminales secundarias en la misma red Wi-Fi, integración con catálogo mayorista B2B y marketplace de distribuidores con liquidación de comisiones, licenciamiento segmentado NeoPOS y MercadoBarrio, dashboard con métricas reales y filtro de estabilidad para auto-actualizaciones.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
