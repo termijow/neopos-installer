@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.5.3",
+  "app_version": "v0.5.4",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Correccion de compatibilidad en start.ps1 para PowerShell 5.1 en Windows, soporte completo de instalacion offline sin requerir internet con imagenes base preempaquetadas (PostgreSQL, MinIO, API, Printer, Frontend), y conectividad multi-terminal en LAN.",
+  "release_notes": "Aislamiento de puertos de red para el microservicio de impresion (printer) evitando colisiones en Windows, compatibilidad total con PowerShell 5.1, y paquete offline con imagenes base preempaquetadas.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,8 +12,8 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.5.3",
-  "notes": "Correccion de compatibilidad en start.ps1 para PowerShell 5.1 en Windows, soporte completo de instalacion offline sin requerir internet con imagenes base preempaquetadas (PostgreSQL, MinIO, API, Printer, Frontend), y conectividad multi-terminal en LAN.",
+  "version": "v0.5.4",
+  "notes": "Aislamiento de puertos de red para el microservicio de impresion (printer) evitando colisiones en Windows, compatibilidad total con PowerShell 5.1, y paquete offline con imagenes base preempaquetadas.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
