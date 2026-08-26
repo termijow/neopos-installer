@@ -519,11 +519,12 @@ class NeoPOSInstaller(ctk.CTk):
                 raise RuntimeError("release-images.json contiene una ruta de imagen inválida.")
             if archive not in members:
                 raise RuntimeError(f"No se encontró la imagen de producción declarada: {archive}")
-            image_tag = str(image_name).rsplit(":", 1)[-1]
-            if image_tag != release_version:
-                raise RuntimeError(
-                    f"La imagen {image_name} no coincide con la versión del paquete {release_version}."
-                )
+            if str(image_name).startswith("neopos-local-"):
+                image_tag = str(image_name).rsplit(":", 1)[-1]
+                if image_tag != release_version:
+                    raise RuntimeError(
+                        f"La imagen {image_name} no coincide con la versión del paquete {release_version}."
+                    )
 
         corrupt_member = zip_ref.testzip()
         if corrupt_member is not None:
@@ -831,39 +832,72 @@ class NeoPOSInstaller(ctk.CTk):
     def register_windows_autostart(self, install_dir):
         """Make Docker Compose start after login and survive process failures."""
         start_script = os.path.join(install_dir, "start.ps1")
-        username = os.environ.get("USERNAME") or os.getlogin()
+        username = os.environ.get("USERNAME") or ""
         command = (
             f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{start_script}" '
             "--local --auto"
         )
+        task_args = [
+            "schtasks",
+            "/Create",
+            "/TN",
+            WINDOWS_AUTOSTART_TASK,
+            "/SC",
+            "ONLOGON",
+            "/DELAY",
+            "0000:30",
+            "/RL",
+            "HIGHEST",
+            "/TR",
+            command,
+            "/F",
+        ]
+        if username:
+            task_args.extend(["/RU", username, "/IT"])
+            
         result = subprocess.run(
-            [
-                "schtasks",
-                "/Create",
-                "/TN",
-                WINDOWS_AUTOSTART_TASK,
-                "/SC",
-                "ONLOGON",
-                "/DELAY",
-                "0000:30",
-                "/RU",
-                username,
-                "/IT",
-                "/RL",
-                "LIMITED",
-                "/TR",
-                command,
-                "/F",
-            ],
+            task_args,
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
+            # Fallback: create shortcut in Windows Startup folder
+            try:
+                appdata = os.environ.get("APPDATA", "")
+                if appdata:
+                    startup_dir = os.path.join(
+                        appdata,
+                        "Microsoft",
+                        "Windows",
+                        "Start Menu",
+                        "Programs",
+                        "Startup",
+                    )
+                    if os.path.isdir(startup_dir):
+                        vbs_path = os.path.join(install_dir, "autostart_shortcut.vbs")
+                        bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
+                        vbs_code = (
+                            'Set oWS = WScript.CreateObject("WScript.Shell")\n'
+                            f'sLinkFile = "{startup_dir}\\NeoPOS-Autostart.lnk"\n'
+                            'Set oLink = oWS.CreateShortcut(sLinkFile)\n'
+                            f'oLink.TargetPath = "{bat_path}"\n'
+                            f'oLink.WorkingDirectory = "{install_dir}"\n'
+                            'oLink.WindowStyle = 7\n'
+                            'oLink.Save\n'
+                        )
+                        with open(vbs_path, "w", encoding="utf-8") as f:
+                            f.write(vbs_code)
+                        subprocess.run(["cscript", "//Nologo", vbs_path], check=False)
+                        self.after(0, lambda: self.append_log(
+                            "[+] Inicio automático configurado mediante la carpeta de inicio de Windows."
+                        ))
+                        return True
+            except Exception:
+                pass
             details = (result.stderr or result.stdout).strip()
             self.after(0, lambda details=details: self.append_log(
-                "[WARN] No se pudo configurar el inicio automático de NeoPOS. "
-                "Los servicios ya están iniciados, pero no se recuperarán automáticamente "
-                f"al iniciar sesión. El Programador de tareas respondió: {details}"
+                "[WARN] No se pudo configurar el inicio automático de NeoPOS en el Programador de tareas: "
+                f"{details}"
             ))
             return False
         self.after(0, lambda: self.append_log(
@@ -998,16 +1032,43 @@ WantedBy=multi-user.target
         if docker_from_path:
             candidates.append(docker_from_path)
         if platform.system() == "Windows":
-            program_files = os.environ.get("ProgramFiles")
+            program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
             local_app_data = os.environ.get("LOCALAPPDATA")
             if program_files:
                 candidates.append(os.path.join(program_files, "Docker", "Docker", "resources", "bin", "docker.exe"))
+                candidates.append(os.path.join(program_files, "Docker", "Docker", "resources", "docker.exe"))
+                candidates.append(r"C:\Program Files\Docker\Docker\resources\bin\docker.exe")
             if local_app_data:
                 candidates.append(os.path.join(local_app_data, "Programs", "Docker", "resources", "bin", "docker.exe"))
                 candidates.append(os.path.join(local_app_data, "Programs", "DockerDesktop", "resources", "bin", "docker.exe"))
         for candidate in candidates:
-            if os.path.isfile(candidate):
+            if candidate and os.path.isfile(candidate):
                 return candidate
+        return None
+
+    def find_offline_docker_installer(self):
+        """Search for a locally bundled or adjacent Docker Desktop installer on Windows."""
+        candidate_names = [
+            "Docker Desktop Installer.exe",
+            "DockerDesktopInstaller.exe",
+            "DockerInstaller.exe",
+            "docker-installer.exe",
+        ]
+        search_dirs = [
+            os.path.dirname(os.path.abspath(sys.executable)),
+            os.path.dirname(os.path.abspath(__file__)),
+            os.getcwd(),
+            getattr(sys, "_MEIPASS", ""),
+            os.path.join(os.path.expanduser("~"), "Downloads"),
+            os.environ.get("TEMP", tempfile.gettempdir()),
+        ]
+        for directory in search_dirs:
+            if not directory or not os.path.isdir(directory):
+                continue
+            for name in candidate_names:
+                candidate = os.path.join(directory, name)
+                if os.path.isfile(candidate) and os.path.getsize(candidate) > 10_000_000:
+                    return candidate
         return None
 
     @staticmethod
@@ -1553,22 +1614,42 @@ WantedBy=multi-user.target
                 docker_available = result.returncode == 0
 
             if system == "Windows" and not docker_available:
+                local_installer = self.find_offline_docker_installer()
+                installer_path = local_installer
+                if installer_path:
+                    self.after(0, lambda p=installer_path: self.append_log(
+                        f"[+] Instalador de Docker encontrado localmente (Modo Offline): {p}"
+                    ))
+                    update_status("Instalando Docker Desktop desde archivo local...")
+                else:
                     update_status("Descargando Docker Desktop (esto tomará unos minutos)...")
-                    installer_path = os.path.join(os.environ["TEMP"], "DockerInstaller.exe")
-                    urllib.request.urlretrieve(
-                        "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe",
-                        installer_path,
-                    )
-
-                    update_status("Instalando Docker Desktop silenciosamente...")
-                    subprocess.run([installer_path, "install", "--quiet"], check=True)
-                    update_status("Docker instalado correctamente.")
-                    docker_cli = self.find_docker_cli()
-                    if not docker_cli:
-                        raise RuntimeError(
-                            "Docker Desktop se instaló, pero Windows todavía no expone docker.exe. "
-                            "Reinicia Windows y vuelve a ejecutar el instalador."
+                    installer_path = os.path.join(os.environ.get("TEMP", tempfile.gettempdir()), "DockerInstaller.exe")
+                    try:
+                        urllib.request.urlretrieve(
+                            "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe",
+                            installer_path,
                         )
+                    except Exception as download_error:
+                        raise RuntimeError(
+                            "No se encontró Docker instalado ni se pudo descargar desde internet.\n"
+                            "Para instalar sin conexión a internet, coloca el archivo 'Docker Desktop Installer.exe' "
+                            f"en la misma carpeta del instalador y vuelve a intentarlo.\nError: {download_error}"
+                        ) from download_error
+
+                update_status("Instalando Docker Desktop silenciosamente...")
+                try:
+                    subprocess.run([installer_path, "install", "--quiet", "--accept-license"], check=True)
+                except subprocess.CalledProcessError:
+                    subprocess.run([installer_path, "install", "--quiet"], check=True)
+                
+                update_status("Docker instalado correctamente.")
+                time.sleep(3)
+                docker_cli = self.find_docker_cli()
+                if not docker_cli:
+                    raise RuntimeError(
+                        "Docker Desktop se instaló, pero Windows todavía no expone docker.exe. "
+                        "Reinicia Windows y vuelve a ejecutar el instalador."
+                    )
             elif system == "Linux" and not docker_available:
                     update_status("Instalando Docker Engine mediante apt...")
                     self.run_process(
@@ -1691,22 +1772,24 @@ WantedBy=multi-user.target
                 # Crear acceso directo en el escritorio
                 try:
                     self.after(0, lambda: self.append_log("[*] Creando acceso directo en el escritorio..."))
-                    desktop = os.path.join(os.environ['USERPROFILE'], 'Desktop')
                     bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
                     vbs_path = os.path.join(install_dir, "shortcut.vbs")
                     
-                    vbs_code = f'Set oWS = WScript.CreateObject("WScript.Shell")\n' \
-                               f'sLinkFile = "{desktop}\\\\NeoPOS.lnk"\n' \
-                               f'Set oLink = oWS.CreateShortcut(sLinkFile)\n' \
-                               f'oLink.TargetPath = "{bat_path}"\n' \
-                               f'oLink.WorkingDirectory = "{install_dir}"\n' \
-                               f'oLink.Save'
+                    vbs_code = (
+                        'Set oWS = WScript.CreateObject("WScript.Shell")\n'
+                        'sLinkFile = oWS.SpecialFolders("Desktop") & "\\NeoPOS.lnk"\n'
+                        'Set oLink = oWS.CreateShortcut(sLinkFile)\n'
+                        f'oLink.TargetPath = "{bat_path}"\n'
+                        f'oLink.WorkingDirectory = "{install_dir}"\n'
+                        'oLink.WindowStyle = 1\n'
+                        'oLink.Save\n'
+                    )
                     
-                    with open(vbs_path, "w") as f:
+                    with open(vbs_path, "w", encoding="utf-8") as f:
                         f.write(vbs_code)
-                    subprocess.run(["cscript", "//Nologo", vbs_path])
+                    subprocess.run(["cscript", "//Nologo", vbs_path], check=False)
                 except Exception as ex:
-                    self.after(0, lambda: self.append_log(f"[-] No se pudo crear el acceso directo: {ex}"))
+                    self.after(0, lambda ex=ex: self.append_log(f"[-] No se pudo crear el acceso directo: {ex}"))
             elif platform.system() == "Linux" and os.path.exists(os.path.join(install_dir, "docker-compose.yml")):
                 self.after(0, lambda: self.append_log("[*] Instalando runtime protegido e iniciando servicios Linux..."))
                 self.register_linux_autostart(install_dir)

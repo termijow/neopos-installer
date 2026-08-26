@@ -27,6 +27,27 @@ jobs:
       run: python -m PyInstaller --clean --onefile --windowed --uac-admin --add-data "neopos-local.zip;." --name "NeoPOS-Installer-${{ github.ref_name }}" main.py
     - name: Build uninstaller with PyInstaller
       run: python -m PyInstaller --clean --onefile --windowed --uac-admin --name "NeoPOS-Uninstaller-${{ github.ref_name }}" uninstaller.py
+    - name: Download Docker Desktop Installer for offline bundle
+      run: |
+        mkdir release-offline
+        curl.exe -L -o "release-offline/Docker Desktop Installer.exe" "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe"
+        copy "dist\NeoPOS-Installer-${{ github.ref_name }}.exe" "release-offline\NeoPOS-Installer.exe"
+        copy "dist\NeoPOS-Installer-${{ github.ref_name }}.exe" "release-offline\NeoPOS-Installer-${{ github.ref_name }}.exe"
+        copy "neopos-local.zip" "release-offline\neopos-local.zip"
+        @"
+        =====================================================
+         NeoPOS - Instrucciones de Instalacion Offline
+        =====================================================
+
+        Este paquete esta preparado para instalar NeoPOS en equipos sin conexion a internet.
+
+        Pasos:
+        1. Descomprime este archivo ZIP completo en una carpeta local o memoria USB.
+        2. Ejecuta "NeoPOS-Installer.exe" como Administrador.
+        3. El instalador usara "Docker Desktop Installer.exe" y las imagenes preempaquetadas en neopos-local.zip sin necesidad de descargar nada de internet.
+        4. Al terminar, ingresa a http://localhost:5173 con las credenciales creadas y configura la licencia.
+        "@ | Out-File -FilePath "release-offline\INSTRUCCIONES_OFFLINE.txt" -Encoding utf8
+        Compress-Archive -Path release-offline\* -DestinationPath "dist\NeoPOS-Offline-Bundle-${{ github.ref_name }}.zip" -Force
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -34,6 +55,7 @@ jobs:
         path: |
           dist/NeoPOS-Installer-${{ github.ref_name }}.exe
           dist/NeoPOS-Uninstaller-${{ github.ref_name }}.exe
+          dist/NeoPOS-Offline-Bundle-${{ github.ref_name }}.zip
 
   build-linux:
     runs-on: ubuntu-latest
@@ -91,6 +113,7 @@ jobs:
         cp "release-files/NeoPOS-Uninstaller-${GITHUB_REF_NAME}.exe" release-files/NeoPOS-Uninstaller.exe
         cp "release-files/NeoPOS-Installer-Linux-${GITHUB_REF_NAME}" release-files/NeoPOS-Installer-Linux
         cp "release-files/NeoPOS-Uninstaller-Linux-${GITHUB_REF_NAME}" release-files/NeoPOS-Uninstaller-Linux
+        cp "release-files/NeoPOS-Offline-Bundle-${GITHUB_REF_NAME}.zip" release-files/NeoPOS-Offline-Bundle.zip || true
     - name: Render release notes from manifest
       run: python scripts/render_release_notes.py neopos-local-manifest.json release-notes.md
     - name: Create Release

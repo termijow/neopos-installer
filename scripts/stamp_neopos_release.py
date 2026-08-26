@@ -93,11 +93,12 @@ def validate_source_free_archive(archive: zipfile.ZipFile, expected_version: str
         image_path = str(image.get("archive", "")).replace("\\", "/")
         if image_path.startswith("/") or ".." in image_path.split("/") or image_path not in members:
             raise RuntimeError(f"No se encontró la imagen declarada: {image_path}")
-        image_tag = str(image["name"]).rsplit(":", 1)[-1]
-        if image_tag != expected_version:
-            raise RuntimeError(
-                f"La imagen {image['name']} no coincide con la release {expected_version}."
-            )
+        if str(image["name"]).startswith("neopos-local-"):
+            image_tag = str(image["name"]).rsplit(":", 1)[-1]
+            if image_tag != expected_version:
+                raise RuntimeError(
+                    f"La imagen {image['name']} no coincide con la release {expected_version}."
+                )
 
     corrupt_member = archive.testzip()
     if corrupt_member is not None:
