@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.5.5",
+  "app_version": "v0.5.6",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Soporte para backups automáticos con tracking de versión, eliminación y restauración de copias de seguridad, y mejoras en la sincronización local.",
+  "release_notes": "Soporte completo para facturación electrónica y pagos mixtos en mesas, límites de inventario a 10.000 unidades por producto con alertas, filtrado estricto de ventas del día, menú colapsable tipo hamburguesa y aislamiento de cola muerta (DLQ) en la nube.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,8 +12,8 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.5.5",
-  "notes": "Soporte para backups automáticos con tracking de versión, eliminación y restauración de copias de seguridad, y mejoras en la sincronización local.",
+  "version": "v0.5.6",
+  "notes": "Soporte completo para facturación electrónica y pagos mixtos en mesas, límites de inventario a 10.000 unidades por producto con alertas, filtrado estricto de ventas del día, menú colapsable tipo hamburguesa y aislamiento de cola muerta (DLQ) en la nube.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
