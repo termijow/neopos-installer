@@ -17,6 +17,8 @@
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
-    "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux"
+    "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.6/NeoPOS-Installer-v0.5.6.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.6/NeoPOS-Installer-Linux-v0.5.6"
   }
 }

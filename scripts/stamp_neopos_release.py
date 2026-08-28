@@ -121,9 +121,12 @@ def build_manifest(archive: zipfile.ZipFile, version: str) -> dict:
     manifest["version"] = version
     manifest["notes"] = manifest.get("release_notes", "")
     manifest["download_url"] = "https://github.com/termijow/neopos-installer/releases/latest"
+    tag = version if version.startswith("v") else f"v{version}"
     manifest["download_urls"] = {
         "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
         "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
+        "windows_versioned": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-{tag}.exe",
+        "linux_versioned": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-Linux-{tag}",
     }
     return manifest
 
