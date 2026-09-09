@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.5.9",
+  "app_version": "v0.5.10",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Rediseño responsive completo de la vista de pedidos para móvil, tablet y desktop con selector rápido de mesa, optimizaciones táctiles y adaptativas en inventario, caja, dashboard y mesas, validación de IP privada y gestión de red LAN local con mDNS, y mejoras de estabilidad general.",
+  "release_notes": "Soporte de doble impresora térmica independiente (comandas y facturas) en la misma PC con configuración dinámica de conexiones (USB / COM, Red LAN ESC/POS y Emulador), atajos de puertos, ancho de papel 80mm/58mm, pruebas de impresión en vivo y disparo automático de impresión.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.5.9",
-  "notes": "Rediseño responsive completo de la vista de pedidos para móvil, tablet y desktop con selector rápido de mesa, optimizaciones táctiles y adaptativas en inventario, caja, dashboard y mesas, validación de IP privada y gestión de red LAN local con mDNS, y mejoras de estabilidad general.",
+  "version": "v0.5.10",
+  "notes": "Soporte de doble impresora térmica independiente (comandas y facturas) en la misma PC con configuración dinámica de conexiones (USB / COM, Red LAN ESC/POS y Emulador), atajos de puertos, ancho de papel 80mm/58mm, pruebas de impresión en vivo y disparo automático de impresión.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
     "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.9/NeoPOS-Installer-v0.5.9.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.9/NeoPOS-Installer-Linux-v0.5.9"
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.10/NeoPOS-Installer-v0.5.10.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.10/NeoPOS-Installer-Linux-v0.5.10"
   }
 }
