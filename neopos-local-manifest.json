@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.6.4",
+  "app_version": "v0.6.5",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Detección robusta multi-capa de IP física Wi-Fi/Ethernet en Windows (API nativa .NET, parser tolerante a dot-leaders de ipconfig en cualquier idioma y codificación OEM, Get-NetIPAddress y sondeo UDP), compatibilidad total con routers offline sin gateway ni internet, y fallback para ingreso manual.",
+  "release_notes": "Detección automática multi-capa de IP física LAN/Wi-Fi en Windows mediante 6 capas de resolución (WMI/CIM, .NET NetworkInterface independiente de NCSI, parser agnóstico universal de ipconfig, tabla de enrutamiento del kernel route print, Get-NetIPAddress y socket UDP), soporte para routers offline sin internet, y sincronización completa de start.ps1 y refresh_ip.ps1.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.6.4",
-  "notes": "Detección robusta multi-capa de IP física Wi-Fi/Ethernet en Windows (API nativa .NET, parser tolerante a dot-leaders de ipconfig en cualquier idioma y codificación OEM, Get-NetIPAddress y sondeo UDP), compatibilidad total con routers offline sin gateway ni internet, y fallback para ingreso manual.",
+  "version": "v0.6.5",
+  "notes": "Detección automática multi-capa de IP física LAN/Wi-Fi en Windows mediante 6 capas de resolución (WMI/CIM, .NET NetworkInterface independiente de NCSI, parser agnóstico universal de ipconfig, tabla de enrutamiento del kernel route print, Get-NetIPAddress y socket UDP), soporte para routers offline sin internet, y sincronización completa de start.ps1 y refresh_ip.ps1.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
     "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.4/NeoPOS-Installer-v0.6.4.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.4/NeoPOS-Installer-Linux-v0.6.4"
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.5/NeoPOS-Installer-v0.6.5.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.5/NeoPOS-Installer-Linux-v0.6.5"
   }
 }
