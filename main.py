@@ -42,6 +42,7 @@ REQUIRED_RELEASE_MEMBERS = {
     "start.ps1",
     "docker-compose.yml",
     "Abrir_NeoPOS.bat",
+    "Actualizar_IP.bat",
     "init.sql",
     "local/backend/.env.example",
     "release-images.json",
@@ -883,20 +884,20 @@ class NeoPOSInstaller(ctk.CTk):
                     "Startup",
                 )
                 if os.path.isdir(startup_dir):
-                    vbs_path = os.path.join(install_dir, "autostart_shortcut.vbs")
                     bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
-                    vbs_code = (
-                        'Set oWS = WScript.CreateObject("WScript.Shell")\n'
-                        f'sLinkFile = "{startup_dir}\\NeoPOS-Autostart.lnk"\n'
-                        'Set oLink = oWS.CreateShortcut(sLinkFile)\n'
-                        f'oLink.TargetPath = "{bat_path}"\n'
-                        f'oLink.WorkingDirectory = "{install_dir}"\n'
-                        'oLink.WindowStyle = 7\n'
-                        'oLink.Save\n'
+                    ps_code = f"""
+$WshShell = New-Object -ComObject WScript.Shell
+$sc = $WshShell.CreateShortcut('{startup_dir}\\NeoPOS-Autostart.lnk')
+$sc.TargetPath = '{bat_path}'
+$sc.WorkingDirectory = '{install_dir}'
+$sc.WindowStyle = 7
+$sc.Save()
+"""
+                    subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_code],
+                        check=False,
+                        capture_output=True,
                     )
-                    with open(vbs_path, "w", encoding="utf-8") as f:
-                        f.write(vbs_code)
-                    subprocess.run(["cscript", "//Nologo", vbs_path], check=False)
                     startup_registered = True
                     self.after(0, lambda: self.append_log(
                         "[+] Inicio automático registrado en la carpeta de inicio de Windows (Administrador de Tareas)."
@@ -913,52 +914,89 @@ class NeoPOSInstaller(ctk.CTk):
         return False
 
     def create_windows_shortcuts(self, install_dir):
-        """Create Desktop and Start Menu shortcuts for NeoPOS app and start.ps1."""
+        """Create Desktop and Start Menu shortcuts for NeoPOS app, start.ps1, and Actualizar_IP.bat."""
         if platform.system() != "Windows":
             return
         try:
             self.after(0, lambda: self.append_log("[*] Creando accesos directos en Escritorio y Menú de Inicio..."))
             bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
             start_ps1_path = os.path.join(install_dir, "start.ps1")
-            vbs_path = os.path.join(install_dir, "shortcut.vbs")
+            actualizar_bat_path = os.path.join(install_dir, "Actualizar_IP.bat")
 
-            vbs_code = (
-                'Set oWS = WScript.CreateObject("WScript.Shell")\n'
-                # 1. Acceso en el Escritorio: NeoPOS (App)
-                'sLinkDesktop = oWS.SpecialFolders("Desktop") & "\\NeoPOS.lnk"\n'
-                'Set oLinkDesktop = oWS.CreateShortcut(sLinkDesktop)\n'
-                f'oLinkDesktop.TargetPath = "{bat_path}"\n'
-                f'oLinkDesktop.WorkingDirectory = "{install_dir}"\n'
-                'oLinkDesktop.WindowStyle = 7\n'
-                'oLinkDesktop.Save\n'
-                # 2. Acceso en el Escritorio: Iniciar Servicios (start.ps1)
-                'sLinkDesktopPs1 = oWS.SpecialFolders("Desktop") & "\\NeoPOS - Iniciar Servicios (start.ps1).lnk"\n'
-                'Set oLinkDesktopPs1 = oWS.CreateShortcut(sLinkDesktopPs1)\n'
-                'oLinkDesktopPs1.TargetPath = "powershell.exe"\n'
-                f'oLinkDesktopPs1.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"\"{start_ps1_path}\"\""\n'
-                f'oLinkDesktopPs1.WorkingDirectory = "{install_dir}"\n'
-                'oLinkDesktopPs1.WindowStyle = 1\n'
-                'oLinkDesktopPs1.Save\n'
-                # 3. Acceso en el Menú de Inicio: NeoPOS (App)
-                'sLinkPrograms = oWS.SpecialFolders("Programs") & "\\NeoPOS.lnk"\n'
-                'Set oLinkPrograms = oWS.CreateShortcut(sLinkPrograms)\n'
-                f'oLinkPrograms.TargetPath = "{bat_path}"\n'
-                f'oLinkPrograms.WorkingDirectory = "{install_dir}"\n'
-                'oLinkPrograms.WindowStyle = 7\n'
-                'oLinkPrograms.Save\n'
-                # 4. Acceso en el Menú de Inicio: Iniciar Servicios (start.ps1)
-                'sLinkPs1 = oWS.SpecialFolders("Programs") & "\\NeoPOS - Iniciar Servicios (start.ps1).lnk"\n'
-                'Set oLinkPs1 = oWS.CreateShortcut(sLinkPs1)\n'
-                'oLinkPs1.TargetPath = "powershell.exe"\n'
-                f'oLinkPs1.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"\"{start_ps1_path}\"\""\n'
-                f'oLinkPs1.WorkingDirectory = "{install_dir}"\n'
-                'oLinkPs1.WindowStyle = 1\n'
-                'oLinkPs1.Save\n'
+            ps_code = f"""
+$WshShell = New-Object -ComObject WScript.Shell
+$desktopPaths = @(
+    [System.Environment]::GetFolderPath('Desktop'),
+    (Join-Path $env:USERPROFILE "Desktop"),
+    (Join-Path $env:USERPROFILE "OneDrive\\Desktop"),
+    [System.Environment]::GetFolderPath('CommonDesktopDirectory')
+) | Where-Object {{ $_ -and (Test-Path $_) }} | Select-Object -Unique
+
+$programsPaths = @(
+    [System.Environment]::GetFolderPath('Programs'),
+    [System.Environment]::GetFolderPath('CommonPrograms')
+) | Where-Object {{ $_ -and (Test-Path $_) }} | Select-Object -Unique
+
+$bat = '{bat_path}'
+$ps1 = '{start_ps1_path}'
+$act = '{actualizar_bat_path}'
+$root = '{install_dir}'
+
+foreach ($dp in $desktopPaths) {{
+    if (Test-Path $bat) {{
+        $sc = $WshShell.CreateShortcut((Join-Path $dp "NeoPOS.lnk"))
+        $sc.TargetPath = $bat
+        $sc.WorkingDirectory = $root
+        $sc.WindowStyle = 7
+        $sc.Save()
+    }}
+    if (Test-Path $ps1) {{
+        $sc2 = $WshShell.CreateShortcut((Join-Path $dp "NeoPOS - Iniciar Servicios (start.ps1).lnk"))
+        $sc2.TargetPath = "powershell.exe"
+        $sc2.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$ps1`""
+        $sc2.WorkingDirectory = $root
+        $sc2.WindowStyle = 1
+        $sc2.Save()
+    }}
+    if (Test-Path $act) {{
+        $sc3 = $WshShell.CreateShortcut((Join-Path $dp "NeoPOS - Actualizar IP de Red.lnk"))
+        $sc3.TargetPath = $act
+        $sc3.WorkingDirectory = $root
+        $sc3.WindowStyle = 1
+        $sc3.Save()
+    }}
+}}
+
+foreach ($pp in $programsPaths) {{
+    if (Test-Path $bat) {{
+        $sc = $WshShell.CreateShortcut((Join-Path $pp "NeoPOS.lnk"))
+        $sc.TargetPath = $bat
+        $sc.WorkingDirectory = $root
+        $sc.WindowStyle = 7
+        $sc.Save()
+    }}
+    if (Test-Path $ps1) {{
+        $sc2 = $WshShell.CreateShortcut((Join-Path $pp "NeoPOS - Iniciar Servicios (start.ps1).lnk"))
+        $sc2.TargetPath = "powershell.exe"
+        $sc2.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$ps1`""
+        $sc2.WorkingDirectory = $root
+        $sc2.WindowStyle = 1
+        $sc2.Save()
+    }}
+    if (Test-Path $act) {{
+        $sc3 = $WshShell.CreateShortcut((Join-Path $pp "NeoPOS - Actualizar IP de Red.lnk"))
+        $sc3.TargetPath = $act
+        $sc3.WorkingDirectory = $root
+        $sc3.WindowStyle = 1
+        $sc3.Save()
+    }}
+}}
+"""
+            subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_code],
+                check=False,
+                capture_output=True,
             )
-
-            with open(vbs_path, "w", encoding="utf-8") as f:
-                f.write(vbs_code)
-            subprocess.run(["cscript", "//Nologo", vbs_path], check=False)
             self.after(0, lambda: self.append_log("[+] Accesos directos creados correctamente en Escritorio y Menú de Inicio."))
         except Exception as ex:
             self.after(0, lambda ex=ex: self.append_log(f"[-] No se pudieron crear los accesos directos: {ex}"))
