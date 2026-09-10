@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.5.15",
+  "app_version": "v0.6.0",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Acceso directo a start.ps1 en el Escritorio y Menú de Inicio (para iniciar Docker y refrescar IP dinámica), más optimización de accesos directos en Windows.",
+  "release_notes": "Integración y automatización de drivers de impresión en Linux mediante CUPS, colas de comanda y factura independientes, y soporte de doble impresora térmica.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.5.15",
-  "notes": "Acceso directo a start.ps1 en el Escritorio y Menú de Inicio (para iniciar Docker y refrescar IP dinámica), más optimización de accesos directos en Windows.",
+  "version": "v0.6.0",
+  "notes": "Integración y automatización de drivers de impresión en Linux mediante CUPS, colas de comanda y factura independientes, y soporte de doble impresora térmica.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
     "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.15/NeoPOS-Installer-v0.5.15.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.15/NeoPOS-Installer-Linux-v0.5.15"
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.0/NeoPOS-Installer-v0.6.0.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.0/NeoPOS-Installer-Linux-v0.6.0"
   }
 }
