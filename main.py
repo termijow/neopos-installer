@@ -1781,7 +1781,7 @@ WantedBy=multi-user.target
                         'Set oLink = oWS.CreateShortcut(sLinkFile)\n'
                         f'oLink.TargetPath = "{bat_path}"\n'
                         f'oLink.WorkingDirectory = "{install_dir}"\n'
-                        'oLink.WindowStyle = 1\n'
+                        'oLink.WindowStyle = 7\n'
                         'oLink.Save\n'
                     )
                     

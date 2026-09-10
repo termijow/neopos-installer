@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.5.12",
+  "app_version": "v0.5.13",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Sistema de clave dinámica y códigos de respaldo offline (estilo Google) para inventario: pool de 7 códigos de emergencia de un solo uso con hashes SHA-256 locales, validación dual online/offline y sincronización bidireccional con neopos-cloud.",
+  "release_notes": "Corrección de detección de red en Windows (exclusión de subredes virtuales WSL2/Hyper-V), escaneo de subred LAN en Buscar IP y optimización de Abrir_NeoPOS.bat para inicio instantáneo sin abrir terminal manual.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.5.12",
-  "notes": "Sistema de clave dinámica y códigos de respaldo offline (estilo Google) para inventario: pool de 7 códigos de emergencia de un solo uso con hashes SHA-256 locales, validación dual online/offline y sincronización bidireccional con neopos-cloud.",
+  "version": "v0.5.13",
+  "notes": "Corrección de detección de red en Windows (exclusión de subredes virtuales WSL2/Hyper-V), escaneo de subred LAN en Buscar IP y optimización de Abrir_NeoPOS.bat para inicio instantáneo sin abrir terminal manual.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
     "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.12/NeoPOS-Installer-v0.5.12.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.12/NeoPOS-Installer-Linux-v0.5.12"
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.13/NeoPOS-Installer-v0.5.13.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.13/NeoPOS-Installer-Linux-v0.5.13"
   }
 }
