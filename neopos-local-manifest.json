@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.6.1",
+  "app_version": "v0.6.2",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Ajuste proporcional de tipografía y ancho de papel para impresoras térmicas de 58mm y 80mm en software POS (comandas, facturas de venta y factura electrónica DIAN), con selector de tamaño de tipografía (compacta, normal, grande) configurable desde Ajustes.",
+  "release_notes": "Detección dinámica de IP física Wi-Fi/LAN offline sin requerir internet ni gateway, script y accesos directos en Escritorio (incluyendo OneDrive) y menú de inicio de Windows para inicio de servicios y actualización de IP, sincronización automática en segundo plano y resolución instantánea WebRTC en Ajustes.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.6.1",
-  "notes": "Ajuste proporcional de tipografía y ancho de papel para impresoras térmicas de 58mm y 80mm en software POS (comandas, facturas de venta y factura electrónica DIAN), con selector de tamaño de tipografía (compacta, normal, grande) configurable desde Ajustes.",
+  "version": "v0.6.2",
+  "notes": "Detección dinámica de IP física Wi-Fi/LAN offline sin requerir internet ni gateway, script y accesos directos en Escritorio (incluyendo OneDrive) y menú de inicio de Windows para inicio de servicios y actualización de IP, sincronización automática en segundo plano y resolución instantánea WebRTC en Ajustes.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
     "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.1/NeoPOS-Installer-v0.6.1.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.1/NeoPOS-Installer-Linux-v0.6.1"
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.2/NeoPOS-Installer-v0.6.2.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.2/NeoPOS-Installer-Linux-v0.6.2"
   }
 }
