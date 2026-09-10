@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.6.2",
+  "app_version": "v0.6.3",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Detección dinámica de IP física Wi-Fi/LAN offline sin requerir internet ni gateway, script y accesos directos en Escritorio (incluyendo OneDrive) y menú de inicio de Windows para inicio de servicios y actualización de IP, sincronización automática en segundo plano y resolución instantánea WebRTC en Ajustes.",
+  "release_notes": "Corrección crítica en start.ps1 para Windows: ejecución de contenedores Docker en segundo plano desacoplados de la terminal PowerShell (--prod / up -d), prevención del cierre automático y detención accidental de contenedores, creación de accesos directos actualizados y confirmación interactiva de servicios activos.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.6.2",
-  "notes": "Detección dinámica de IP física Wi-Fi/LAN offline sin requerir internet ni gateway, script y accesos directos en Escritorio (incluyendo OneDrive) y menú de inicio de Windows para inicio de servicios y actualización de IP, sincronización automática en segundo plano y resolución instantánea WebRTC en Ajustes.",
+  "version": "v0.6.3",
+  "notes": "Corrección crítica en start.ps1 para Windows: ejecución de contenedores Docker en segundo plano desacoplados de la terminal PowerShell (--prod / up -d), prevención del cierre automático y detención accidental de contenedores, creación de accesos directos actualizados y confirmación interactiva de servicios activos.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
     "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.2/NeoPOS-Installer-v0.6.2.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.2/NeoPOS-Installer-Linux-v0.6.2"
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.3/NeoPOS-Installer-v0.6.3.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.3/NeoPOS-Installer-Linux-v0.6.3"
   }
 }

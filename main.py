@@ -953,7 +953,7 @@ foreach ($dp in $desktopPaths) {{
     if (Test-Path $ps1) {{
         $sc2 = $WshShell.CreateShortcut((Join-Path $dp "NeoPOS - Iniciar Servicios (start.ps1).lnk"))
         $sc2.TargetPath = "powershell.exe"
-        $sc2.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$ps1`""
+        $sc2.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$ps1`" --prod"
         $sc2.WorkingDirectory = $root
         $sc2.WindowStyle = 1
         $sc2.Save()
@@ -978,7 +978,7 @@ foreach ($pp in $programsPaths) {{
     if (Test-Path $ps1) {{
         $sc2 = $WshShell.CreateShortcut((Join-Path $pp "NeoPOS - Iniciar Servicios (start.ps1).lnk"))
         $sc2.TargetPath = "powershell.exe"
-        $sc2.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$ps1`""
+        $sc2.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$ps1`" --prod"
         $sc2.WorkingDirectory = $root
         $sc2.WindowStyle = 1
         $sc2.Save()
