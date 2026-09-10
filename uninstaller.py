@@ -64,11 +64,15 @@ def image_names() -> list[str]:
 def remove_autostart() -> None:
     if platform.system() == "Windows":
         run(["schtasks", "/Delete", "/TN", TASK_NAME, "/F"])
-        desktop = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop" / "NeoPOS.lnk"
-        try:
-            desktop.unlink(missing_ok=True)
-        except OSError:
-            pass
+        desktop_dir = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
+        for desktop_link in (
+            desktop_dir / "NeoPOS.lnk",
+            desktop_dir / "NeoPOS - Iniciar Servicios (start.ps1).lnk",
+        ):
+            try:
+                desktop_link.unlink(missing_ok=True)
+            except OSError:
+                pass
         appdata = os.environ.get("APPDATA", "")
         if appdata:
             for p in (

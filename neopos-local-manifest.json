@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.5.14",
+  "app_version": "v0.5.15",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Accesos directos a NeoPOS y start.ps1 en el Menú de Inicio de Windows, registro dual en carpeta Inicio (Startup / Administrador de Tareas) y optimización de arranque silencioso.",
+  "release_notes": "Acceso directo a start.ps1 en el Escritorio y Menú de Inicio (para iniciar Docker y refrescar IP dinámica), más optimización de accesos directos en Windows.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.5.14",
-  "notes": "Accesos directos a NeoPOS y start.ps1 en el Menú de Inicio de Windows, registro dual en carpeta Inicio (Startup / Administrador de Tareas) y optimización de arranque silencioso.",
+  "version": "v0.5.15",
+  "notes": "Acceso directo a start.ps1 en el Escritorio y Menú de Inicio (para iniciar Docker y refrescar IP dinámica), más optimización de accesos directos en Windows.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
     "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.14/NeoPOS-Installer-v0.5.14.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.14/NeoPOS-Installer-Linux-v0.5.14"
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.15/NeoPOS-Installer-v0.5.15.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.15/NeoPOS-Installer-Linux-v0.5.15"
   }
 }

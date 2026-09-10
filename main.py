@@ -912,6 +912,57 @@ class NeoPOSInstaller(ctk.CTk):
             return True
         return False
 
+    def create_windows_shortcuts(self, install_dir):
+        """Create Desktop and Start Menu shortcuts for NeoPOS app and start.ps1."""
+        if platform.system() != "Windows":
+            return
+        try:
+            self.after(0, lambda: self.append_log("[*] Creando accesos directos en Escritorio y Menú de Inicio..."))
+            bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
+            start_ps1_path = os.path.join(install_dir, "start.ps1")
+            vbs_path = os.path.join(install_dir, "shortcut.vbs")
+
+            vbs_code = (
+                'Set oWS = WScript.CreateObject("WScript.Shell")\n'
+                # 1. Acceso en el Escritorio: NeoPOS (App)
+                'sLinkDesktop = oWS.SpecialFolders("Desktop") & "\\NeoPOS.lnk"\n'
+                'Set oLinkDesktop = oWS.CreateShortcut(sLinkDesktop)\n'
+                f'oLinkDesktop.TargetPath = "{bat_path}"\n'
+                f'oLinkDesktop.WorkingDirectory = "{install_dir}"\n'
+                'oLinkDesktop.WindowStyle = 7\n'
+                'oLinkDesktop.Save\n'
+                # 2. Acceso en el Escritorio: Iniciar Servicios (start.ps1)
+                'sLinkDesktopPs1 = oWS.SpecialFolders("Desktop") & "\\NeoPOS - Iniciar Servicios (start.ps1).lnk"\n'
+                'Set oLinkDesktopPs1 = oWS.CreateShortcut(sLinkDesktopPs1)\n'
+                'oLinkDesktopPs1.TargetPath = "powershell.exe"\n'
+                f'oLinkDesktopPs1.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"\"{start_ps1_path}\"\""\n'
+                f'oLinkDesktopPs1.WorkingDirectory = "{install_dir}"\n'
+                'oLinkDesktopPs1.WindowStyle = 1\n'
+                'oLinkDesktopPs1.Save\n'
+                # 3. Acceso en el Menú de Inicio: NeoPOS (App)
+                'sLinkPrograms = oWS.SpecialFolders("Programs") & "\\NeoPOS.lnk"\n'
+                'Set oLinkPrograms = oWS.CreateShortcut(sLinkPrograms)\n'
+                f'oLinkPrograms.TargetPath = "{bat_path}"\n'
+                f'oLinkPrograms.WorkingDirectory = "{install_dir}"\n'
+                'oLinkPrograms.WindowStyle = 7\n'
+                'oLinkPrograms.Save\n'
+                # 4. Acceso en el Menú de Inicio: Iniciar Servicios (start.ps1)
+                'sLinkPs1 = oWS.SpecialFolders("Programs") & "\\NeoPOS - Iniciar Servicios (start.ps1).lnk"\n'
+                'Set oLinkPs1 = oWS.CreateShortcut(sLinkPs1)\n'
+                'oLinkPs1.TargetPath = "powershell.exe"\n'
+                f'oLinkPs1.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"\"{start_ps1_path}\"\""\n'
+                f'oLinkPs1.WorkingDirectory = "{install_dir}"\n'
+                'oLinkPs1.WindowStyle = 1\n'
+                'oLinkPs1.Save\n'
+            )
+
+            with open(vbs_path, "w", encoding="utf-8") as f:
+                f.write(vbs_code)
+            subprocess.run(["cscript", "//Nologo", vbs_path], check=False)
+            self.after(0, lambda: self.append_log("[+] Accesos directos creados correctamente en Escritorio y Menú de Inicio."))
+        except Exception as ex:
+            self.after(0, lambda ex=ex: self.append_log(f"[-] No se pudieron crear los accesos directos: {ex}"))
+
     def register_linux_autostart(self, install_dir):
         """Install an immutable root-owned runtime and register systemd.
 
@@ -1774,42 +1825,7 @@ WantedBy=multi-user.target
                 )
                 self.after(0, lambda: self.append_log("[*] Configurando recuperación automática de servicios..."))
                 self.register_windows_autostart(install_dir)
-                
-                # Crear accesos directos en el escritorio y menu de inicio
-                try:
-                    self.after(0, lambda: self.append_log("[*] Creando accesos directos en Escritorio y Menú de Inicio..."))
-                    bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
-                    start_ps1_path = os.path.join(install_dir, "start.ps1")
-                    vbs_path = os.path.join(install_dir, "shortcut.vbs")
-                    
-                    vbs_code = (
-                        'Set oWS = WScript.CreateObject("WScript.Shell")\n'
-                        'sLinkDesktop = oWS.SpecialFolders("Desktop") & "\\NeoPOS.lnk"\n'
-                        'Set oLinkDesktop = oWS.CreateShortcut(sLinkDesktop)\n'
-                        f'oLinkDesktop.TargetPath = "{bat_path}"\n'
-                        f'oLinkDesktop.WorkingDirectory = "{install_dir}"\n'
-                        'oLinkDesktop.WindowStyle = 7\n'
-                        'oLinkDesktop.Save\n'
-                        'sLinkPrograms = oWS.SpecialFolders("Programs") & "\\NeoPOS.lnk"\n'
-                        'Set oLinkPrograms = oWS.CreateShortcut(sLinkPrograms)\n'
-                        f'oLinkPrograms.TargetPath = "{bat_path}"\n'
-                        f'oLinkPrograms.WorkingDirectory = "{install_dir}"\n'
-                        'oLinkPrograms.WindowStyle = 7\n'
-                        'oLinkPrograms.Save\n'
-                        'sLinkPs1 = oWS.SpecialFolders("Programs") & "\\NeoPOS - Iniciar Servicios (start.ps1).lnk"\n'
-                        'Set oLinkPs1 = oWS.CreateShortcut(sLinkPs1)\n'
-                        'oLinkPs1.TargetPath = "powershell.exe"\n'
-                        f'oLinkPs1.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"\"{start_ps1_path}\"\""\n'
-                        f'oLinkPs1.WorkingDirectory = "{install_dir}"\n'
-                        'oLinkPs1.WindowStyle = 1\n'
-                        'oLinkPs1.Save\n'
-                    )
-                    
-                    with open(vbs_path, "w", encoding="utf-8") as f:
-                        f.write(vbs_code)
-                    subprocess.run(["cscript", "//Nologo", vbs_path], check=False)
-                except Exception as ex:
-                    self.after(0, lambda ex=ex: self.append_log(f"[-] No se pudieron crear los accesos directos: {ex}"))
+                self.create_windows_shortcuts(install_dir)
             elif platform.system() == "Linux" and os.path.exists(os.path.join(install_dir, "docker-compose.yml")):
                 self.after(0, lambda: self.append_log("[*] Instalando runtime protegido e iniciando servicios Linux..."))
                 self.register_linux_autostart(install_dir)
@@ -1916,6 +1932,7 @@ WantedBy=multi-user.target
                     )
                 self.wait_for_local_services(docker_cli, compose_file)
                 self.register_windows_autostart(install_dir)
+                self.create_windows_shortcuts(install_dir)
             elif platform.system() == "Linux":
                 update_status("Actualizando el runtime protegido e iniciando los servicios locales...")
                 self.register_linux_autostart(install_dir)
