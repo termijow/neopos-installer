@@ -860,51 +860,57 @@ class NeoPOSInstaller(ctk.CTk):
             capture_output=True,
             text=True,
         )
-        if result.returncode != 0:
-            # Fallback: create shortcut in Windows Startup folder
-            try:
-                appdata = os.environ.get("APPDATA", "")
-                if appdata:
-                    startup_dir = os.path.join(
-                        appdata,
-                        "Microsoft",
-                        "Windows",
-                        "Start Menu",
-                        "Programs",
-                        "Startup",
-                    )
-                    if os.path.isdir(startup_dir):
-                        vbs_path = os.path.join(install_dir, "autostart_shortcut.vbs")
-                        bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
-                        vbs_code = (
-                            'Set oWS = WScript.CreateObject("WScript.Shell")\n'
-                            f'sLinkFile = "{startup_dir}\\NeoPOS-Autostart.lnk"\n'
-                            'Set oLink = oWS.CreateShortcut(sLinkFile)\n'
-                            f'oLink.TargetPath = "{bat_path}"\n'
-                            f'oLink.WorkingDirectory = "{install_dir}"\n'
-                            'oLink.WindowStyle = 7\n'
-                            'oLink.Save\n'
-                        )
-                        with open(vbs_path, "w", encoding="utf-8") as f:
-                            f.write(vbs_code)
-                        subprocess.run(["cscript", "//Nologo", vbs_path], check=False)
-                        self.after(0, lambda: self.append_log(
-                            "[+] Inicio automático configurado mediante la carpeta de inicio de Windows."
-                        ))
-                        return True
-            except Exception:
-                pass
+        task_configured = (result.returncode == 0)
+        if not task_configured:
             details = (result.stderr or result.stdout).strip()
             self.after(0, lambda details=details: self.append_log(
                 "[WARN] No se pudo configurar el inicio automático de NeoPOS en el Programador de tareas: "
                 f"{details}"
             ))
-            return False
-        self.after(0, lambda: self.append_log(
-            "[+] Inicio automático configurado: los servicios se levantan al iniciar sesión "
-            "y Docker Compose los recupera si se caen."
-        ))
-        return True
+
+        # Registrar siempre acceso directo en la carpeta de inicio de Windows (Startup)
+        # para garantizar arranque en inicio de sesion y visibilidad en el Administrador de Tareas
+        startup_registered = False
+        try:
+            appdata = os.environ.get("APPDATA", "")
+            if appdata:
+                startup_dir = os.path.join(
+                    appdata,
+                    "Microsoft",
+                    "Windows",
+                    "Start Menu",
+                    "Programs",
+                    "Startup",
+                )
+                if os.path.isdir(startup_dir):
+                    vbs_path = os.path.join(install_dir, "autostart_shortcut.vbs")
+                    bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
+                    vbs_code = (
+                        'Set oWS = WScript.CreateObject("WScript.Shell")\n'
+                        f'sLinkFile = "{startup_dir}\\NeoPOS-Autostart.lnk"\n'
+                        'Set oLink = oWS.CreateShortcut(sLinkFile)\n'
+                        f'oLink.TargetPath = "{bat_path}"\n'
+                        f'oLink.WorkingDirectory = "{install_dir}"\n'
+                        'oLink.WindowStyle = 7\n'
+                        'oLink.Save\n'
+                    )
+                    with open(vbs_path, "w", encoding="utf-8") as f:
+                        f.write(vbs_code)
+                    subprocess.run(["cscript", "//Nologo", vbs_path], check=False)
+                    startup_registered = True
+                    self.after(0, lambda: self.append_log(
+                        "[+] Inicio automático registrado en la carpeta de inicio de Windows (Administrador de Tareas)."
+                    ))
+        except Exception:
+            pass
+
+        if task_configured or startup_registered:
+            self.after(0, lambda: self.append_log(
+                "[+] Inicio automático configurado: los servicios se levantan al iniciar sesión "
+                "y Docker Compose los recupera si se caen."
+            ))
+            return True
+        return False
 
     def register_linux_autostart(self, install_dir):
         """Install an immutable root-owned runtime and register systemd.
@@ -1769,27 +1775,41 @@ WantedBy=multi-user.target
                 self.after(0, lambda: self.append_log("[*] Configurando recuperación automática de servicios..."))
                 self.register_windows_autostart(install_dir)
                 
-                # Crear acceso directo en el escritorio
+                # Crear accesos directos en el escritorio y menu de inicio
                 try:
-                    self.after(0, lambda: self.append_log("[*] Creando acceso directo en el escritorio..."))
+                    self.after(0, lambda: self.append_log("[*] Creando accesos directos en Escritorio y Menú de Inicio..."))
                     bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
+                    start_ps1_path = os.path.join(install_dir, "start.ps1")
                     vbs_path = os.path.join(install_dir, "shortcut.vbs")
                     
                     vbs_code = (
                         'Set oWS = WScript.CreateObject("WScript.Shell")\n'
-                        'sLinkFile = oWS.SpecialFolders("Desktop") & "\\NeoPOS.lnk"\n'
-                        'Set oLink = oWS.CreateShortcut(sLinkFile)\n'
-                        f'oLink.TargetPath = "{bat_path}"\n'
-                        f'oLink.WorkingDirectory = "{install_dir}"\n'
-                        'oLink.WindowStyle = 7\n'
-                        'oLink.Save\n'
+                        'sLinkDesktop = oWS.SpecialFolders("Desktop") & "\\NeoPOS.lnk"\n'
+                        'Set oLinkDesktop = oWS.CreateShortcut(sLinkDesktop)\n'
+                        f'oLinkDesktop.TargetPath = "{bat_path}"\n'
+                        f'oLinkDesktop.WorkingDirectory = "{install_dir}"\n'
+                        'oLinkDesktop.WindowStyle = 7\n'
+                        'oLinkDesktop.Save\n'
+                        'sLinkPrograms = oWS.SpecialFolders("Programs") & "\\NeoPOS.lnk"\n'
+                        'Set oLinkPrograms = oWS.CreateShortcut(sLinkPrograms)\n'
+                        f'oLinkPrograms.TargetPath = "{bat_path}"\n'
+                        f'oLinkPrograms.WorkingDirectory = "{install_dir}"\n'
+                        'oLinkPrograms.WindowStyle = 7\n'
+                        'oLinkPrograms.Save\n'
+                        'sLinkPs1 = oWS.SpecialFolders("Programs") & "\\NeoPOS - Iniciar Servicios (start.ps1).lnk"\n'
+                        'Set oLinkPs1 = oWS.CreateShortcut(sLinkPs1)\n'
+                        'oLinkPs1.TargetPath = "powershell.exe"\n'
+                        f'oLinkPs1.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"\"{start_ps1_path}\"\""\n'
+                        f'oLinkPs1.WorkingDirectory = "{install_dir}"\n'
+                        'oLinkPs1.WindowStyle = 1\n'
+                        'oLinkPs1.Save\n'
                     )
                     
                     with open(vbs_path, "w", encoding="utf-8") as f:
                         f.write(vbs_code)
                     subprocess.run(["cscript", "//Nologo", vbs_path], check=False)
                 except Exception as ex:
-                    self.after(0, lambda ex=ex: self.append_log(f"[-] No se pudo crear el acceso directo: {ex}"))
+                    self.after(0, lambda ex=ex: self.append_log(f"[-] No se pudieron crear los accesos directos: {ex}"))
             elif platform.system() == "Linux" and os.path.exists(os.path.join(install_dir, "docker-compose.yml")):
                 self.after(0, lambda: self.append_log("[*] Instalando runtime protegido e iniciando servicios Linux..."))
                 self.register_linux_autostart(install_dir)

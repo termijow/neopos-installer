@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.5.13",
+  "app_version": "v0.5.14",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Corrección de detección de red en Windows (exclusión de subredes virtuales WSL2/Hyper-V), escaneo de subred LAN en Buscar IP y optimización de Abrir_NeoPOS.bat para inicio instantáneo sin abrir terminal manual.",
+  "release_notes": "Accesos directos a NeoPOS y start.ps1 en el Menú de Inicio de Windows, registro dual en carpeta Inicio (Startup / Administrador de Tareas) y optimización de arranque silencioso.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.5.13",
-  "notes": "Corrección de detección de red en Windows (exclusión de subredes virtuales WSL2/Hyper-V), escaneo de subred LAN en Buscar IP y optimización de Abrir_NeoPOS.bat para inicio instantáneo sin abrir terminal manual.",
+  "version": "v0.5.14",
+  "notes": "Accesos directos a NeoPOS y start.ps1 en el Menú de Inicio de Windows, registro dual en carpeta Inicio (Startup / Administrador de Tareas) y optimización de arranque silencioso.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
     "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.13/NeoPOS-Installer-v0.5.13.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.13/NeoPOS-Installer-Linux-v0.5.13"
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.14/NeoPOS-Installer-v0.5.14.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.5.14/NeoPOS-Installer-Linux-v0.5.14"
   }
 }

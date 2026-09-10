@@ -69,6 +69,17 @@ def remove_autostart() -> None:
             desktop.unlink(missing_ok=True)
         except OSError:
             pass
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            for p in (
+                Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "NeoPOS.lnk",
+                Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "NeoPOS - Iniciar Servicios (start.ps1).lnk",
+                Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "NeoPOS-Autostart.lnk",
+            ):
+                try:
+                    p.unlink(missing_ok=True)
+                except OSError:
+                    pass
     elif platform.system() == "Linux":
         run(["sudo", "systemctl", "disable", "--now", "neopos-local.service"])
         run(["sudo", "rm", "-f", str(LINUX_SYSTEMD_UNIT)])
