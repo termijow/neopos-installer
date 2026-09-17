@@ -65,8 +65,69 @@ FORBIDDEN_RELEASE_SUFFIXES = (
     ".env",
 )
 
-ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
-ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
+def create_linux_shortcuts(install_dir, logger=None):
+    """Create Desktop and Application menu shortcuts for NeoPOS on Linux."""
+    if platform.system() != "Linux":
+        return
+    log = logger or (lambda msg: None)
+    try:
+        log("[*] Creando accesos directos de Linux en Escritorio y Menú de Aplicaciones...")
+        launcher = os.path.join(install_dir, "Abrir_NeoPOS.sh")
+        if not os.path.exists(launcher):
+            launcher = os.path.join(install_dir, "start.sh")
+
+        if os.path.exists(launcher):
+            try:
+                os.chmod(launcher, 0o755)
+            except OSError:
+                pass
+
+        desktop_content = (
+            "[Desktop Entry]\n"
+            "Version=1.0\n"
+            "Type=Application\n"
+            "Name=NeoPOS\n"
+            "Comment=Sistema Punto de Venta NeoPOS Local\n"
+            f"Exec=\"{launcher}\"\n"
+            f"Path={install_dir}\n"
+            "Icon=utilities-terminal\n"
+            "Terminal=false\n"
+            "Categories=Office;Finance;\n"
+        )
+
+        home = os.path.expanduser("~")
+
+        # 1. ~/.local/share/applications/neopos.desktop
+        apps_dir = os.path.join(home, ".local", "share", "applications")
+        os.makedirs(apps_dir, exist_ok=True)
+        apps_file = os.path.join(apps_dir, "neopos.desktop")
+        with open(apps_file, "w", encoding="utf-8") as f:
+            f.write(desktop_content)
+        try:
+            os.chmod(apps_file, 0o755)
+        except OSError:
+            pass
+
+        # 2. ~/Desktop/NeoPOS.desktop (and ~/Escritorio if present)
+        desktop_dirs = [os.path.join(home, "Desktop")]
+        escritorio = os.path.join(home, "Escritorio")
+        if os.path.isdir(escritorio):
+            desktop_dirs.append(escritorio)
+
+        for d in desktop_dirs:
+            os.makedirs(d, exist_ok=True)
+            desktop_file = os.path.join(d, "NeoPOS.desktop")
+            with open(desktop_file, "w", encoding="utf-8") as f:
+                f.write(desktop_content)
+            try:
+                os.chmod(desktop_file, 0o755)
+            except OSError:
+                pass
+
+        log("[+] Accesos directos de Linux creados correctamente.")
+    except Exception as ex:
+        log(f"[WARN] No se pudieron crear los accesos directos de Linux: {ex}")
+
 
 class NeoPOSInstaller(ctk.CTk):
     def __init__(self):
@@ -301,10 +362,60 @@ class NeoPOSInstaller(ctk.CTk):
         except (OSError, AttributeError) as error:
             self.append_log(f"[WARN] No se pudo abrir el archivo de credenciales: {error}")
 
+    def _ask_linux_admin_password_fallback(self):
+        """Fallback to zenity, kdialog, or terminal getpass when tkinter fails."""
+        has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+        prompt_text = (
+            "NeoPOS necesita permisos de administrador para iniciar Docker Engine "
+            "y registrar sus servicios. Ingresa tu contraseña sudo:"
+        )
+        if has_display and shutil.which("zenity"):
+            try:
+                proc = subprocess.run(
+                    [
+                        "zenity",
+                        "--password",
+                        "--title=Permisos de administrador - NeoPOS",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if proc.returncode == 0:
+                    return proc.stdout.rstrip("\r\n")
+                return None
+            except Exception:
+                pass
+
+        if has_display and shutil.which("kdialog"):
+            try:
+                proc = subprocess.run(
+                    [
+                        "kdialog",
+                        "--password",
+                        prompt_text,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if proc.returncode == 0:
+                    return proc.stdout.rstrip("\r\n")
+                return None
+            except Exception:
+                pass
+
+        try:
+            import getpass
+            return getpass.getpass("NeoPOS - Contraseña sudo: ")
+        except Exception:
+            return None
+
     def ask_linux_admin_password(self):
         """Ask for sudo credentials on the UI thread without exposing them in logs."""
         completed = threading.Event()
         answer = {"password": None}
+        dialog_failed = [False]
 
         def prompt():
             try:
@@ -317,11 +428,20 @@ class NeoPOSInstaller(ctk.CTk):
                     show="*",
                     parent=self,
                 )
+            except Exception:
+                dialog_failed[0] = True
             finally:
                 completed.set()
 
-        self.after(0, prompt)
-        completed.wait()
+        try:
+            self.after(0, prompt)
+            completed.wait()
+        except Exception:
+            dialog_failed[0] = True
+
+        if dialog_failed[0]:
+            return self._ask_linux_admin_password_fallback()
+
         return answer["password"]
 
     def ensure_linux_admin_access(self):
@@ -1001,6 +1121,10 @@ foreach ($pp in $programsPaths) {{
         except Exception as ex:
             self.after(0, lambda ex=ex: self.append_log(f"[-] No se pudieron crear los accesos directos: {ex}"))
 
+    def create_linux_shortcuts(self, install_dir):
+        """Create Desktop and Application menu shortcuts for NeoPOS on Linux."""
+        create_linux_shortcuts(install_dir, logger=self.append_log)
+
     def register_linux_autostart(self, install_dir):
         """Install an immutable root-owned runtime and register systemd.
 
@@ -1091,6 +1215,18 @@ WantedBy=multi-user.target
         self.after(0, lambda: self.append_log(
             "[+] Servicio systemd configurado con runtime root-owned en /opt/neopos-local."
         ))
+
+        setup_cups_path = os.path.join(install_dir, "scripts", "setup_cups.sh")
+        if os.path.isfile(setup_cups_path):
+            self.after(0, lambda: self.append_log("[*] Configurando colas de impresion CUPS..."))
+            try:
+                os.chmod(setup_cups_path, 0o755)
+                self.run_process(["bash", setup_cups_path, "--no-test"], privileged=True, check=False)
+                self.after(0, lambda: self.append_log("[+] Colas de impresion CUPS configuradas."))
+            except Exception as ex:
+                self.after(0, lambda ex=ex: self.append_log(f"[WARN] No se pudo configurar CUPS: {ex}"))
+
+        self.create_linux_shortcuts(install_dir)
 
     def verify_windows_virtualization(self):
         """Warn about virtualization without blocking Docker's own validation."""
@@ -1867,6 +2003,7 @@ WantedBy=multi-user.target
             elif platform.system() == "Linux" and os.path.exists(os.path.join(install_dir, "docker-compose.yml")):
                 self.after(0, lambda: self.append_log("[*] Instalando runtime protegido e iniciando servicios Linux..."))
                 self.register_linux_autostart(install_dir)
+                self.create_linux_shortcuts(install_dir)
             else:
                 raise RuntimeError(
                     "La release no contiene un script de inicio compatible "
@@ -1974,6 +2111,7 @@ WantedBy=multi-user.target
             elif platform.system() == "Linux":
                 update_status("Actualizando el runtime protegido e iniciando los servicios locales...")
                 self.register_linux_autostart(install_dir)
+                self.create_linux_shortcuts(install_dir)
             else:
                 raise RuntimeError(f"Sistema operativo no soportado: {platform.system()}")
 

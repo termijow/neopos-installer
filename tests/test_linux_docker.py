@@ -214,6 +214,64 @@ class LinuxDockerTests(unittest.TestCase):
             self.assertEqual(backend_values["APP_VERSION"], "0.3.8")
             self.assertEqual(backend_values["UPDATE_MANIFEST_URL"], installer_main.DEFAULT_UPDATE_MANIFEST_URL)
 
+    @mock.patch.object(installer_main.platform, "system", return_value="Linux")
+    def test_create_linux_shortcuts_generates_desktop_and_apps_entries(self, _system):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_home = Path(temp_dir) / "home"
+            desktop_dir = fake_home / "Desktop"
+            escritorio_dir = fake_home / "Escritorio"
+            apps_dir = fake_home / ".local" / "share" / "applications"
+            desktop_dir.mkdir(parents=True)
+            escritorio_dir.mkdir(parents=True)
+            apps_dir.mkdir(parents=True)
+
+            install_dir = Path(temp_dir) / "NeoPOS"
+            install_dir.mkdir(parents=True)
+            launcher = install_dir / "Abrir_NeoPOS.sh"
+            launcher.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+
+            with mock.patch("os.path.expanduser", return_value=str(fake_home)):
+                installer_main.create_linux_shortcuts(str(install_dir))
+
+            desktop_shortcut = desktop_dir / "NeoPOS.desktop"
+            escritorio_shortcut = escritorio_dir / "NeoPOS.desktop"
+            apps_shortcut = apps_dir / "neopos.desktop"
+
+            self.assertTrue(desktop_shortcut.is_file())
+            self.assertTrue(escritorio_shortcut.is_file())
+            self.assertTrue(apps_shortcut.is_file())
+
+            content = desktop_shortcut.read_text(encoding="utf-8")
+            self.assertIn("NeoPOS", content)
+            self.assertIn(str(launcher), content)
+            self.assertIn(str(install_dir), content)
+
+            if os.name != "nt":
+                self.assertTrue(desktop_shortcut.stat().st_mode & 0o111 != 0)
+                self.assertTrue(apps_shortcut.stat().st_mode & 0o111 != 0)
+
+    @mock.patch.object(installer_main.platform, "system", return_value="Linux")
+    def test_ask_linux_admin_password_falls_back_to_zenity_when_simpledialog_fails(self, _system):
+        installer = installer_without_ui()
+        with mock.patch.object(installer_main.simpledialog, "askstring", side_effect=Exception("tkinter failure")):
+            with mock.patch.dict(os.environ, {"DISPLAY": ":0"}):
+                with mock.patch("shutil.which", return_value="/usr/bin/zenity"):
+                    with mock.patch("subprocess.run") as mock_run:
+                        mock_run.return_value = subprocess.CompletedProcess([], 0, "secret-via-zenity\n", "")
+                        password = installer.ask_linux_admin_password()
+
+        self.assertEqual(password, "secret-via-zenity")
+
+    @mock.patch.object(installer_main.platform, "system", return_value="Linux")
+    def test_ask_linux_admin_password_falls_back_to_getpass_when_no_display(self, _system):
+        installer = installer_without_ui()
+        with mock.patch.object(installer_main.simpledialog, "askstring", side_effect=Exception("tkinter failure")):
+            with mock.patch.dict(os.environ, {"DISPLAY": "", "WAYLAND_DISPLAY": ""}):
+                with mock.patch("getpass.getpass", return_value="secret-via-getpass"):
+                    password = installer.ask_linux_admin_password()
+
+        self.assertEqual(password, "secret-via-getpass")
+
 
 if __name__ == "__main__":
     unittest.main()
