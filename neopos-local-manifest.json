@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.6.10",
+  "app_version": "v0.6.11",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Telemetria integral de errores con sincronizacion en tiempo real hacia Cloud (/admin/qa): captura de errores de impresion termica, popups bloqueados, fallas de API/red, panics y prevencion de pantalla blanca con ErrorBoundary.",
+  "release_notes": "Telemetría integral con sincronización en tiempo real hacia Cloud (/admin/qa): captura de errores HTTP 4xx/5xx, toasts de UI, backend y fallas de impresión con cola offline de reintentos. Aislamiento estricto de borradores de pedidos por mesa en base de datos sin contaminación cruzada. Prevención del error 'record not found' al cobrar prepedidos sin comanda. Alerta preventiva y modal de confirmación en cierre de caja con mesas abiertas. Ventanas de impresión personalizables con modo pantalla completa, botón de maximizar y ejecución autónoma directa. Reintento y actualización de facturas electrónicas DIAN pendientes/rechazadas. Soporte para productos y servicios sin control de inventario (track_inventory). Restauración de copias de seguridad desde la interfaz web. Cierre de sesión limpio por inactividad a login. Anonimización y ofuscación en build de producción. Mejoras de instalador Linux con soporte CUPS y accesos directos .desktop.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.6.10",
-  "notes": "Telemetria integral de errores con sincronizacion en tiempo real hacia Cloud (/admin/qa): captura de errores de impresion termica, popups bloqueados, fallas de API/red, panics y prevencion de pantalla blanca con ErrorBoundary.",
+  "version": "v0.6.11",
+  "notes": "Telemetría integral con sincronización en tiempo real hacia Cloud (/admin/qa): captura de errores HTTP 4xx/5xx, toasts de UI, backend y fallas de impresión con cola offline de reintentos. Aislamiento estricto de borradores de pedidos por mesa en base de datos sin contaminación cruzada. Prevención del error 'record not found' al cobrar prepedidos sin comanda. Alerta preventiva y modal de confirmación en cierre de caja con mesas abiertas. Ventanas de impresión personalizables con modo pantalla completa, botón de maximizar y ejecución autónoma directa. Reintento y actualización de facturas electrónicas DIAN pendientes/rechazadas. Soporte para productos y servicios sin control de inventario (track_inventory). Restauración de copias de seguridad desde la interfaz web. Cierre de sesión limpio por inactividad a login. Anonimización y ofuscación en build de producción. Mejoras de instalador Linux con soporte CUPS y accesos directos .desktop.",
   "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
   "download_urls": {
     "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
     "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.10/NeoPOS-Installer-v0.6.10.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.10/NeoPOS-Installer-Linux-v0.6.10"
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.11/NeoPOS-Installer-v0.6.11.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.11/NeoPOS-Installer-Linux-v0.6.11"
   }
 }
