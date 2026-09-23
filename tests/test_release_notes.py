@@ -41,6 +41,21 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertTrue(manifest["download_urls"]["windows"].endswith("NeoPOS-Installer.exe"))
         self.assertTrue(manifest["download_urls"]["linux"].endswith("NeoPOS-Installer-Linux"))
 
+    def test_prerelease_manifest_exposes_versioned_downloads(self):
+        archive_bytes = io.BytesIO()
+        with zipfile.ZipFile(archive_bytes, "w") as archive:
+            archive.writestr("release-manifest.json", json.dumps({
+                "app_version": "v0.7.0-beta", "release_notes": "Versión beta.",
+            }))
+        archive_bytes.seek(0)
+        with zipfile.ZipFile(archive_bytes, "r") as archive:
+            manifest = build_manifest(archive, "v0.7.0-beta")
+
+        self.assertEqual(manifest["version"], "v0.7.0-beta")
+        self.assertIn("/tag/v0.7.0-beta", manifest["download_url"])
+        self.assertTrue(manifest["download_urls"]["windows"].endswith("NeoPOS-Installer-v0.7.0-beta.exe"))
+        self.assertTrue(manifest["download_urls"]["linux"].endswith("NeoPOS-Installer-Linux-v0.7.0-beta"))
+
     def test_stable_version_policy_filtering(self):
         from main import NeoPOSInstaller
 

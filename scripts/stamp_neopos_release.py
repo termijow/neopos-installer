@@ -120,14 +120,24 @@ def build_manifest(archive: zipfile.ZipFile, version: str) -> dict:
     manifest["app_version"] = version
     manifest["version"] = version
     manifest["notes"] = manifest.get("release_notes", "")
-    manifest["download_url"] = "https://github.com/termijow/neopos-installer/releases/latest"
     tag = version if version.startswith("v") else f"v{version}"
-    manifest["download_urls"] = {
-        "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
-        "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-        "windows_versioned": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-{tag}.exe",
-        "linux_versioned": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-Linux-{tag}",
-    }
+    is_prerelease = any(suffix in version.lower() for suffix in ("-beta", "-rc", "-alpha", "-preview", "-test"))
+    if is_prerelease:
+        manifest["download_url"] = f"https://github.com/termijow/neopos-installer/releases/tag/{tag}"
+        manifest["download_urls"] = {
+            "windows": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-{tag}.exe",
+            "linux": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-Linux-{tag}",
+            "windows_versioned": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-{tag}.exe",
+            "linux_versioned": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-Linux-{tag}",
+        }
+    else:
+        manifest["download_url"] = "https://github.com/termijow/neopos-installer/releases/latest"
+        manifest["download_urls"] = {
+            "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
+            "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
+            "windows_versioned": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-{tag}.exe",
+            "linux_versioned": f"https://github.com/termijow/neopos-installer/releases/download/{tag}/NeoPOS-Installer-Linux-{tag}",
+        }
     return manifest
 
 

@@ -108,6 +108,7 @@ jobs:
         RELEASE_VERSION: ${{ github.ref_name }}
       run: python scripts/stamp_neopos_release.py neopos-local.zip neopos-local-manifest.json
     - name: Keep stable download aliases
+      if: ${{ !(contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-preview') || contains(github.ref_name, '-test')) }}
       run: |
         cp "release-files/NeoPOS-Installer-${GITHUB_REF_NAME}.exe" release-files/NeoPOS-Installer.exe
         cp "release-files/NeoPOS-Uninstaller-${GITHUB_REF_NAME}.exe" release-files/NeoPOS-Uninstaller.exe
@@ -122,7 +123,8 @@ jobs:
         tag_name: ${{ github.ref_name }}
         name: NeoPOS Installer ${{ github.ref_name }}
         body_path: release-notes.md
-        make_latest: true
+        prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-preview') || contains(github.ref_name, '-test') }}
+        make_latest: ${{ !(contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-preview') || contains(github.ref_name, '-test')) }}
         files: |
           release-files/*
           neopos-local.zip
