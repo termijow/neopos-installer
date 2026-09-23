@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "app_version": "v0.6.11",
+  "app_version": "v0.7.0-beta",
   "database_migration": "additive",
   "breaking_changes": false,
-  "release_notes": "Telemetría integral con sincronización en tiempo real hacia Cloud (/admin/qa): captura de errores HTTP 4xx/5xx, toasts de UI, backend y fallas de impresión con cola offline de reintentos. Aislamiento estricto de borradores de pedidos por mesa en base de datos sin contaminación cruzada. Prevención del error 'record not found' al cobrar prepedidos sin comanda. Alerta preventiva y modal de confirmación en cierre de caja con mesas abiertas. Ventanas de impresión personalizables con modo pantalla completa, botón de maximizar y ejecución autónoma directa. Reintento y actualización de facturas electrónicas DIAN pendientes/rechazadas. Soporte para productos y servicios sin control de inventario (track_inventory). Restauración de copias de seguridad desde la interfaz web. Cierre de sesión limpio por inactividad a login. Anonimización y ofuscación en build de producción. Mejoras de instalador Linux con soporte CUPS y accesos directos .desktop.",
+  "release_notes": "Versión Beta Voluntaria v0.7.0-beta (Consolidación total de ramas): Unificación de plano de mesas interactivas, pedidos y órdenes para llevar, corrección de medios de pago con auditoría, descuentos por porcentaje, anulación de ítems de comanda con desglose financiero y unificación de productos. Telemetría integral con sincronización en tiempo real hacia Cloud (/admin/qa) con captura de errores 4xx/5xx y toasts de UI con cola offline. Aislamiento estricto de borradores por mesa en base de datos. Prevención del error 'record not found' en prepedidos. Modal de confirmación en cierre de caja con mesas abiertas. Ventanas de impresión dinámicas y pantalla completa. Reintento y sincronización de facturas DIAN pendientes/rechazadas. Soporte para productos y servicios sin inventario (track_inventory). Restauración de backups desde interfaz web. Cierre limpio por inactividad y ofuscación en build de producción.",
   "data_policy": {
     "persistent_volumes": [
       "postgres-data",
@@ -12,13 +12,13 @@
     ],
     "update_strategy": "preserve-volumes-and-backup-before-start"
   },
-  "version": "v0.6.11",
-  "notes": "Telemetría integral con sincronización en tiempo real hacia Cloud (/admin/qa): captura de errores HTTP 4xx/5xx, toasts de UI, backend y fallas de impresión con cola offline de reintentos. Aislamiento estricto de borradores de pedidos por mesa en base de datos sin contaminación cruzada. Prevención del error 'record not found' al cobrar prepedidos sin comanda. Alerta preventiva y modal de confirmación en cierre de caja con mesas abiertas. Ventanas de impresión personalizables con modo pantalla completa, botón de maximizar y ejecución autónoma directa. Reintento y actualización de facturas electrónicas DIAN pendientes/rechazadas. Soporte para productos y servicios sin control de inventario (track_inventory). Restauración de copias de seguridad desde la interfaz web. Cierre de sesión limpio por inactividad a login. Anonimización y ofuscación en build de producción. Mejoras de instalador Linux con soporte CUPS y accesos directos .desktop.",
-  "download_url": "https://github.com/termijow/neopos-installer/releases/latest",
+  "version": "v0.7.0-beta",
+  "notes": "Versión Beta Voluntaria v0.7.0-beta (Consolidación total de ramas): Unificación de plano de mesas interactivas, pedidos y órdenes para llevar, corrección de medios de pago con auditoría, descuentos por porcentaje, anulación de ítems de comanda con desglose financiero y unificación de productos. Telemetría integral con sincronización en tiempo real hacia Cloud (/admin/qa) con captura de errores 4xx/5xx y toasts de UI con cola offline. Aislamiento estricto de borradores por mesa en base de datos. Prevención del error 'record not found' en prepedidos. Modal de confirmación en cierre de caja con mesas abiertas. Ventanas de impresión dinámicas y pantalla completa. Reintento y sincronización de facturas DIAN pendientes/rechazadas. Soporte para productos y servicios sin inventario (track_inventory). Restauración de backups desde interfaz web. Cierre limpio por inactividad y ofuscación en build de producción.",
+  "download_url": "https://github.com/termijow/neopos-installer/releases/tag/v0.7.0-beta",
   "download_urls": {
-    "windows": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer.exe",
-    "linux": "https://github.com/termijow/neopos-installer/releases/latest/download/NeoPOS-Installer-Linux",
-    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.11/NeoPOS-Installer-v0.6.11.exe",
-    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.6.11/NeoPOS-Installer-Linux-v0.6.11"
+    "windows": "https://github.com/termijow/neopos-installer/releases/download/v0.7.0-beta/NeoPOS-Installer-v0.7.0-beta.exe",
+    "linux": "https://github.com/termijow/neopos-installer/releases/download/v0.7.0-beta/NeoPOS-Installer-Linux-v0.7.0-beta",
+    "windows_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.7.0-beta/NeoPOS-Installer-v0.7.0-beta.exe",
+    "linux_versioned": "https://github.com/termijow/neopos-installer/releases/download/v0.7.0-beta/NeoPOS-Installer-Linux-v0.7.0-beta"
   }
 }
