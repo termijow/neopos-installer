@@ -951,13 +951,35 @@ class NeoPOSInstaller(ctk.CTk):
         )
 
     def register_windows_autostart(self, install_dir):
-        """Make Docker Compose start after login and survive process failures."""
+        """Make Docker Compose start after login silently, applying Docker hardening and WSL2 memory caps."""
+        # 1. Blindaje preventivo de Docker Desktop y optimización de WSL2
+        harden_script = os.path.join(install_dir, "scripts", "harden_docker_windows.ps1")
+        if os.path.exists(harden_script):
+            try:
+                self.after(0, lambda: self.append_log("[*] Aplicando blindaje de Docker (desactivando GUI emergente y limitando RAM a 2GB)..."))
+                subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", harden_script, "-InstallDir", install_dir, "-Silent"],
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
+                self.after(0, lambda: self.append_log("[+] Docker Desktop blindado y .wslconfig configurado (vmmem limitado a 2GB)."))
+            except Exception as e:
+                self.after(0, lambda e=e: self.append_log(f"[WARN] No se pudo ejecutar blindaje automático de Docker: {e}"))
+
+        # 2. Configurar arranque silencioso 100% invisible
+        silent_vbs = os.path.join(install_dir, "start-silent.vbs")
         start_script = os.path.join(install_dir, "start.ps1")
         username = os.environ.get("USERNAME") or ""
-        command = (
-            f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{start_script}" '
-            "--local --auto"
-        )
+
+        if os.path.exists(silent_vbs):
+            command = f'wscript.exe "{silent_vbs}"'
+        else:
+            command = (
+                f'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{start_script}" '
+                "--local --auto"
+            )
+
         task_args = [
             "schtasks",
             "/Create",
@@ -966,7 +988,7 @@ class NeoPOSInstaller(ctk.CTk):
             "/SC",
             "ONLOGON",
             "/DELAY",
-            "0000:30",
+            "0000:20",
             "/RL",
             "HIGHEST",
             "/TR",
@@ -1004,11 +1026,18 @@ class NeoPOSInstaller(ctk.CTk):
                     "Startup",
                 )
                 if os.path.isdir(startup_dir):
-                    bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
+                    if os.path.exists(silent_vbs):
+                        sc_target = "wscript.exe"
+                        sc_args = f'"{silent_vbs}"'
+                    else:
+                        sc_target = os.path.join(install_dir, "Abrir_NeoPOS.bat")
+                        sc_args = ""
+
                     ps_code = f"""
 $WshShell = New-Object -ComObject WScript.Shell
 $sc = $WshShell.CreateShortcut('{startup_dir}\\NeoPOS-Autostart.lnk')
-$sc.TargetPath = '{bat_path}'
+$sc.TargetPath = '{sc_target}'
+$sc.Arguments = '{sc_args}'
 $sc.WorkingDirectory = '{install_dir}'
 $sc.WindowStyle = 7
 $sc.Save()
@@ -1020,10 +1049,11 @@ $sc.Save()
                     )
                     startup_registered = True
                     self.after(0, lambda: self.append_log(
-                        "[+] Inicio automático registrado en la carpeta de inicio de Windows (Administrador de Tareas)."
+                        "[+] Inicio silencioso registrado en la carpeta de inicio de Windows."
                     ))
         except Exception:
             pass
+
 
         if task_configured or startup_registered:
             self.after(0, lambda: self.append_log(
@@ -1043,6 +1073,14 @@ $sc.Save()
             start_ps1_path = os.path.join(install_dir, "start.ps1")
             actualizar_bat_path = os.path.join(install_dir, "Actualizar_IP.bat")
 
+            silent_vbs = os.path.join(install_dir, "start-silent.vbs")
+            if os.path.exists(silent_vbs):
+                target_exec = "wscript.exe"
+                target_args = f'"{silent_vbs}"'
+            else:
+                target_exec = bat_path
+                target_args = ""
+
             ps_code = f"""
 $WshShell = New-Object -ComObject WScript.Shell
 $desktopPaths = @(
@@ -1058,18 +1096,20 @@ $programsPaths = @(
 ) | Where-Object {{ $_ -and (Test-Path $_) }} | Select-Object -Unique
 
 $bat = '{bat_path}'
+$targetExec = '{target_exec}'
+$targetArgs = '{target_args}'
 $ps1 = '{start_ps1_path}'
 $act = '{actualizar_bat_path}'
 $root = '{install_dir}'
 
 foreach ($dp in $desktopPaths) {{
-    if (Test-Path $bat) {{
-        $sc = $WshShell.CreateShortcut((Join-Path $dp "NeoPOS.lnk"))
-        $sc.TargetPath = $bat
-        $sc.WorkingDirectory = $root
-        $sc.WindowStyle = 7
-        $sc.Save()
-    }}
+    $sc = $WshShell.CreateShortcut((Join-Path $dp "NeoPOS.lnk"))
+    $sc.TargetPath = $targetExec
+    $sc.Arguments = $targetArgs
+    $sc.WorkingDirectory = $root
+    $sc.WindowStyle = 7
+    $sc.Save()
+
     if (Test-Path $ps1) {{
         $sc2 = $WshShell.CreateShortcut((Join-Path $dp "NeoPOS - Iniciar Servicios (start.ps1).lnk"))
         $sc2.TargetPath = "powershell.exe"
