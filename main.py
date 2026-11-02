@@ -233,6 +233,50 @@ class NeoPOSInstaller(ctk.CTk):
         )
         self.repair_desc.grid(row=1, column=2, padx=10, pady=0)
 
+        # Detect previous installation and adapt UI to avoid confusion
+        self.is_installed, self.installed_version, detected_dir = self.detect_existing_installation()
+        if detected_dir:
+            self.install_dir = detected_dir
+
+        if self.is_installed:
+            self.title("NeoPOS - Actualización y Mantenimiento")
+            self.title_label.configure(text="NeoPOS ya está instalado")
+            self.subtitle_label.configure(
+                text=f"Se detectó una versión instalada ({self.installed_version}).\nElige la acción que deseas realizar:"
+            )
+
+            # Option 1: Actualizar NeoPOS (Primary, keeps all databases and sales)
+            self.app_btn.configure(
+                text="Actualizar NeoPOS",
+                fg_color="#1d4ed8",
+                hover_color="#1e40af",
+            )
+            self.app_desc.configure(
+                text="Actualiza el software conservando\ntus ventas, productos y base de datos."
+            )
+
+            # Option 2: Desinstalar NeoPOS (Destructive / Red)
+            self.web_btn.configure(
+                text="Desinstalar NeoPOS",
+                command=self.uninstall_app,
+                fg_color="#b91c1c",
+                hover_color="#991b1b",
+            )
+            self.web_desc.configure(
+                text="Elimina los servicios y accesos de\nNeoPOS de este equipo de forma segura."
+            )
+
+            # Option 3: Reparar / Iniciar Servicios
+            self.repair_btn.configure(
+                text="Reparar / Iniciar",
+                command=self.start_services,
+                fg_color="#8a5a00",
+                hover_color="#6b4600",
+            )
+            self.repair_desc.configure(
+                text="Levanta o repara los servicios locales\nsin volver a descargarlos."
+            )
+
         # Progress Frame (Hidden initially)
         self.progress_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.progress_frame.grid_columnconfigure(0, weight=1)
@@ -294,6 +338,72 @@ class NeoPOSInstaller(ctk.CTk):
             wraplength=760,
         )
         self.log_path_label.grid(row=4, column=0, padx=20, pady=(0, 6), sticky="w")
+
+    def detect_existing_installation(self):
+        """Detect if NeoPOS is already installed on this machine."""
+        candidate_dirs = [
+            os.path.join(os.path.expanduser("~"), "NeoPOS"),
+            os.path.join(os.environ.get("ProgramFiles", ""), "NeoPOS") if platform.system() == "Windows" else "/opt/neopos",
+            "/opt/neopos-local",
+        ]
+        for cdir in candidate_dirs:
+            if not cdir or not os.path.exists(cdir):
+                continue
+            compose = os.path.join(cdir, "docker-compose.yml")
+            manifest_candidates = [
+                os.path.join(cdir, "release-manifest.json"),
+                os.path.join(cdir, "neopos-local-manifest.json"),
+            ]
+            env_file = os.path.join(cdir, ".env")
+            found_manifest = next((m for m in manifest_candidates if os.path.exists(m)), None)
+            if os.path.exists(compose) or found_manifest or os.path.exists(env_file):
+                version = "existente"
+                if found_manifest:
+                    try:
+                        with open(found_manifest, "r", encoding="utf-8") as mf:
+                            m = json.load(mf)
+                            version = m.get("app_version") or m.get("version") or version
+                    except Exception:
+                        pass
+                return True, version, cdir
+        return False, None, candidate_dirs[0]
+
+    def uninstall_app(self):
+        """Prompt confirmation and run uninstaller."""
+        confirm = messagebox.askyesno(
+            "Desinstalar NeoPOS",
+            "¿Estás seguro de que deseas desinstalar NeoPOS de este equipo?\n\n"
+            "Se detendrán los contenedores y servicios.\n"
+            "Las copias de seguridad de la base de datos se conservarán.",
+            icon="warning"
+        )
+        if not confirm:
+            return
+
+        uninstaller_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uninstaller.py")
+        if os.path.exists(uninstaller_path):
+            try:
+                subprocess.Popen([sys.executable, uninstaller_path])
+                self.destroy()
+                return
+            except Exception as e:
+                self.append_log(f"[!] Error al invocar desinstalador: {e}")
+
+        self.show_progress()
+        self.progress_label.configure(text="Desinstalando NeoPOS...")
+        threading.Thread(target=self.run_uninstall_fallback_task, daemon=True).start()
+
+    def run_uninstall_fallback_task(self):
+        try:
+            self.after(0, lambda: self.append_log("[*] Deteniendo contenedores de NeoPOS..."))
+            target_dir = self.install_dir or os.path.join(os.path.expanduser("~"), "NeoPOS")
+            if os.path.exists(target_dir):
+                subprocess.run(["docker", "compose", "down"], cwd=target_dir, capture_output=True)
+            self.after(0, lambda: self.append_log("[*] NeoPOS desinstalado con éxito."))
+            self.after(0, lambda: messagebox.showinfo("Desinstalación", "NeoPOS ha sido detenido y desinstalado."))
+            self.after(500, self.destroy)
+        except Exception as e:
+            self.after(0, lambda: self.append_log(f"[!] Error durante desinstalación: {e}"))
 
     def append_log(self, text):
         self.log_box.configure(state="normal")

@@ -3,6 +3,8 @@
   "app_version": "v0.7.0-beta",
   "database_migration": "additive",
   "breaking_changes": false,
+  "rollout_percentage": 10,
+  "canary_branches": [],
   "release_notes": "Versión Beta Voluntaria v0.7.0-beta (Consolidación total de ramas): Unificación de plano de mesas interactivas, pedidos y órdenes para llevar, corrección de medios de pago con auditoría, descuentos por porcentaje, anulación de ítems de comanda con desglose financiero y unificación de productos. Telemetría integral con sincronización en tiempo real hacia Cloud (/admin/qa) con captura de errores 4xx/5xx y toasts de UI con cola offline. Aislamiento estricto de borradores por mesa en base de datos. Prevención del error 'record not found' en prepedidos. Modal de confirmación en cierre de caja con mesas abiertas. Ventanas de impresión dinámicas y pantalla completa. Reintento y sincronización de facturas DIAN pendientes/rechazadas. Soporte para productos y servicios sin inventario (track_inventory). Restauración de backups desde interfaz web. Cierre limpio por inactividad y ofuscación en build de producción.",
   "data_policy": {
     "persistent_volumes": [
