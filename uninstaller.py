@@ -68,6 +68,8 @@ def remove_autostart() -> None:
         for desktop_link in (
             desktop_dir / "NeoPOS.lnk",
             desktop_dir / "NeoPOS - Iniciar Servicios (start.ps1).lnk",
+            desktop_dir / "NeoPOS - Actualizar IP de Red.lnk",
+            desktop_dir / "NeoPOS - Soporte Remoto.lnk",
         ):
             try:
                 desktop_link.unlink(missing_ok=True)
@@ -78,6 +80,8 @@ def remove_autostart() -> None:
             for p in (
                 Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "NeoPOS.lnk",
                 Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "NeoPOS - Iniciar Servicios (start.ps1).lnk",
+                Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "NeoPOS - Actualizar IP de Red.lnk",
+                Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "NeoPOS - Soporte Remoto.lnk",
                 Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "NeoPOS-Autostart.lnk",
             ):
                 try:

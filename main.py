@@ -38,6 +38,16 @@ BUNDLED_RELEASE_FILENAME = "neopos-local.zip"
 DEFAULT_CLOUD_URL = "https://api.neopos.com.co"
 LEGACY_CLOUD_URL = "https://api-neopos-cloud.prismabitetesting.xyz"
 DEFAULT_UPDATE_MANIFEST_URL = NEOPOS_LOCAL_MANIFEST_URL
+
+# RustDesk Remote Support Server Parameters
+RUSTDESK_SERVER_HOST = "2.24.66.112"
+RUSTDESK_SERVER_KEY = "ZLRFJncjCLNFnWE5sL3BJ0uLK0HvV4edO2UqsA29+sc="
+RUSTDESK_WINDOWS_DOWNLOAD_URL = (
+    "https://github.com/rustdesk/rustdesk/releases/download/1.3.8/rustdesk-1.3.8-x86_64.exe"
+)
+RUSTDESK_CONFIGURED_EXE_NAME = (
+    f"rustdesk-host={RUSTDESK_SERVER_HOST},key={RUSTDESK_SERVER_KEY}.exe"
+)
 REQUIRED_RELEASE_MEMBERS = {
     "start.ps1",
     "docker-compose.yml",
@@ -1182,6 +1192,7 @@ $sc.Save()
             bat_path = os.path.join(install_dir, "Abrir_NeoPOS.bat")
             start_ps1_path = os.path.join(install_dir, "start.ps1")
             actualizar_bat_path = os.path.join(install_dir, "Actualizar_IP.bat")
+            rustdesk_path = self.find_rustdesk_installed() or ""
 
             silent_vbs = os.path.join(install_dir, "start-silent.vbs")
             if os.path.exists(silent_vbs):
@@ -1210,6 +1221,7 @@ $targetExec = '{target_exec}'
 $targetArgs = '{target_args}'
 $ps1 = '{start_ps1_path}'
 $act = '{actualizar_bat_path}'
+$rustdesk = '{rustdesk_path}'
 $root = '{install_dir}'
 
 foreach ($dp in $desktopPaths) {{
@@ -1235,6 +1247,13 @@ foreach ($dp in $desktopPaths) {{
         $sc3.WindowStyle = 1
         $sc3.Save()
     }}
+    if ($rustdesk -and (Test-Path $rustdesk)) {{
+        $sc4 = $WshShell.CreateShortcut((Join-Path $dp "NeoPOS - Soporte Remoto.lnk"))
+        $sc4.TargetPath = $rustdesk
+        $sc4.WorkingDirectory = [System.IO.Path]::GetDirectoryName($rustdesk)
+        $sc4.WindowStyle = 1
+        $sc4.Save()
+    }}
 }}
 
 foreach ($pp in $programsPaths) {{
@@ -1259,6 +1278,13 @@ foreach ($pp in $programsPaths) {{
         $sc3.WorkingDirectory = $root
         $sc3.WindowStyle = 1
         $sc3.Save()
+    }}
+    if ($rustdesk -and (Test-Path $rustdesk)) {{
+        $sc4 = $WshShell.CreateShortcut((Join-Path $pp "NeoPOS - Soporte Remoto.lnk"))
+        $sc4.TargetPath = $rustdesk
+        $sc4.WorkingDirectory = [System.IO.Path]::GetDirectoryName($rustdesk)
+        $sc4.WindowStyle = 1
+        $sc4.Save()
     }}
 }}
 """
@@ -1451,6 +1477,106 @@ WantedBy=multi-user.target
                 if os.path.isfile(candidate) and os.path.getsize(candidate) > 10_000_000:
                     return candidate
         return None
+
+    def find_rustdesk_installed(self):
+        """Check if RustDesk is already installed on Windows."""
+        if platform.system() != "Windows":
+            return None
+        candidates = [
+            os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "RustDesk", "RustDesk.exe"),
+            os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "RustDesk", "RustDesk.exe"),
+            r"C:\Program Files\RustDesk\RustDesk.exe",
+        ]
+        for candidate in candidates:
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        which_rd = shutil.which("rustdesk.exe") or shutil.which("RustDesk.exe")
+        if which_rd and os.path.isfile(which_rd):
+            return which_rd
+        return None
+
+    def find_offline_rustdesk_installer(self):
+        """Search for a locally bundled or adjacent RustDesk installer executable on Windows."""
+        search_dirs = [
+            os.path.dirname(os.path.abspath(sys.executable)),
+            os.path.dirname(os.path.abspath(__file__)),
+            os.getcwd(),
+            getattr(sys, "_MEIPASS", ""),
+            os.path.join(os.path.expanduser("~"), "Downloads"),
+        ]
+        for directory in search_dirs:
+            if not directory or not os.path.isdir(directory):
+                continue
+            try:
+                for name in os.listdir(directory):
+                    lower = name.lower()
+                    if lower.startswith("rustdesk") and lower.endswith(".exe"):
+                        candidate = os.path.join(directory, name)
+                        if os.path.isfile(candidate) and os.path.getsize(candidate) > 5_000_000:
+                            return candidate
+            except OSError:
+                continue
+        return None
+
+    def ensure_rustdesk_installed(self, update_status=None):
+        """Install and pre-configure RustDesk unattended remote support for Windows."""
+        if platform.system() != "Windows":
+            return
+
+        def log(msg):
+            self.after(0, lambda m=msg: self.append_log(f"[*] {m}"))
+
+        def status(msg):
+            if update_status:
+                update_status(msg)
+
+        try:
+            installed = self.find_rustdesk_installed()
+            if installed:
+                log(f"[+] Soporte Remoto (RustDesk) ya se encuentra instalado: {installed}")
+                return
+
+            status("Configurando Soporte Remoto (RustDesk)...")
+            log("[*] Verificando instalador de RustDesk para asistencia remota...")
+
+            temp_dir = os.environ.get("TEMP", tempfile.gettempdir())
+            configured_installer = os.path.join(temp_dir, RUSTDESK_CONFIGURED_EXE_NAME)
+
+            offline_installer = self.find_offline_rustdesk_installer()
+            if offline_installer:
+                log(f"[+] Instalador local de RustDesk encontrado: {offline_installer}")
+                if os.path.abspath(offline_installer) != os.path.abspath(configured_installer):
+                    shutil.copyfile(offline_installer, configured_installer)
+            else:
+                status("Descargando Soporte Remoto RustDesk preconfigurado...")
+                log(f"[*] Descargando RustDesk desde: {RUSTDESK_WINDOWS_DOWNLOAD_URL}")
+                try:
+                    urllib.request.urlretrieve(
+                        RUSTDESK_WINDOWS_DOWNLOAD_URL,
+                        configured_installer,
+                    )
+                except Exception as dl_err:
+                    log(f"[!] No se pudo descargar RustDesk ({dl_err}). Se omitirá la instalación de soporte remoto.")
+                    return
+
+            if not os.path.isfile(configured_installer):
+                log("[!] No se encontró el ejecutable de RustDesk tras la descarga.")
+                return
+
+            status("Instalando Soporte Remoto (RustDesk) silenciosamente...")
+            log(f"[*] Instalando RustDesk silencioso ({RUSTDESK_CONFIGURED_EXE_NAME} --silent-install)...")
+            result = subprocess.run(
+                [configured_installer, "--silent-install"],
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+            if result.returncode == 0:
+                log("[+] Soporte Remoto (RustDesk) instalado y vinculado al servidor NeoPOS correctamente.")
+            else:
+                log(f"[!] RustDesk retornó código {result.returncode}. Detalle: {result.stderr.strip() or result.stdout.strip()}")
+        except Exception as exc:
+            log(f"[!] No fue posible instalar RustDesk: {exc}. Continuando con la instalación principal de NeoPOS.")
 
     @staticmethod
     def find_powershell():
@@ -2052,6 +2178,10 @@ WantedBy=multi-user.target
                 raise RuntimeError(f"Sistema operativo no soportado: {system}")
 
             self.ensure_docker_ready(docker_cli)
+
+            # 1.1 Support Tools (RustDesk Remote Access)
+            if system == "Windows":
+                self.ensure_rustdesk_installed(update_status)
 
             # 2. Deploy NeoPOS. The production package is embedded in the
             # installer; downloading is only a compatibility fallback for old
