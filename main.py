@@ -48,6 +48,9 @@ RUSTDESK_WINDOWS_DOWNLOAD_URL = (
 RUSTDESK_CONFIGURED_EXE_NAME = (
     f"rustdesk-host={RUSTDESK_SERVER_HOST},key={RUSTDESK_SERVER_KEY}.exe"
 )
+RUSTDESK_PERMANENT_PASSWORD = os.environ.get(
+    "NEOPOS_RUSTDESK_PASSWORD", "NeoPOS#Soporte2026!"
+)
 REQUIRED_RELEASE_MEMBERS = {
     "start.ps1",
     "docker-compose.yml",
@@ -1518,22 +1521,69 @@ WantedBy=multi-user.target
                 continue
         return None
 
+    def configure_rustdesk_unattended(self, rustdesk_exe, log_func=None):
+        """Configure RustDesk for unattended 1-click remote access using permanent master password."""
+        if not rustdesk_exe or not os.path.isfile(rustdesk_exe):
+            return
+        log = log_func or (lambda m: None)
+        try:
+            # 1. Configure permanent password
+            subprocess.run(
+                [rustdesk_exe, "--password", RUSTDESK_PERMANENT_PASSWORD],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            # 2. Allow password-based connection without requiring manual click approval
+            subprocess.run(
+                [rustdesk_exe, "--option", "approve-mode", "password"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            # 3. Allow both permanent password and temporary one-time password
+            subprocess.run(
+                [rustdesk_exe, "--option", "verification-method", "use-both-passwords"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            log("[+] RustDesk configurado para acceso desatendido (1 clic con contraseña de soporte).")
+        except Exception as e:
+            log(f"[!] No se pudo configurar el acceso desatendido de RustDesk: {e}")
+
     def ensure_rustdesk_installed(self, update_status=None):
         """Install and pre-configure RustDesk unattended remote support for Windows."""
         if platform.system() != "Windows":
             return
 
         def log(msg):
-            self.after(0, lambda m=msg: self.append_log(f"[*] {m}"))
+            if hasattr(self, "after") and callable(getattr(self, "after")):
+                try:
+                    self.after(0, lambda m=msg: self.append_log(f"[*] {m}"))
+                    return
+                except Exception:
+                    pass
+            if hasattr(self, "append_log") and callable(getattr(self, "append_log")):
+                try:
+                    self.append_log(f"[*] {msg}")
+                    return
+                except Exception:
+                    pass
+            print(f"[*] {msg}")
 
         def status(msg):
             if update_status:
-                update_status(msg)
+                try:
+                    update_status(msg)
+                except Exception:
+                    pass
 
         try:
             installed = self.find_rustdesk_installed()
             if installed:
                 log(f"[+] Soporte Remoto (RustDesk) ya se encuentra instalado: {installed}")
+                self.configure_rustdesk_unattended(installed, log)
                 return
 
             status("Configurando Soporte Remoto (RustDesk)...")
@@ -1573,6 +1623,9 @@ WantedBy=multi-user.target
             )
             if result.returncode == 0:
                 log("[+] Soporte Remoto (RustDesk) instalado y vinculado al servidor NeoPOS correctamente.")
+                installed_exe = self.find_rustdesk_installed()
+                if installed_exe:
+                    self.configure_rustdesk_unattended(installed_exe, log)
             else:
                 log(f"[!] RustDesk retornó código {result.returncode}. Detalle: {result.stderr.strip() or result.stdout.strip()}")
         except Exception as exc:

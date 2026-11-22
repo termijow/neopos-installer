@@ -59,17 +59,22 @@ class TestRustDeskIntegration(unittest.TestCase):
     def test_ensure_rustdesk_installed_already_present(self, mock_system):
         app = mock.MagicMock(spec=main.NeoPOSInstaller)
         app.find_rustdesk_installed.return_value = r"C:\Program Files\RustDesk\RustDesk.exe"
+        app.configure_rustdesk_unattended = mock.MagicMock()
         
         main.NeoPOSInstaller.ensure_rustdesk_installed(app)
         # Should not attempt download or subprocess when already present
         app.find_offline_rustdesk_installer.assert_not_called()
+        app.configure_rustdesk_unattended.assert_called_once_with(
+            r"C:\Program Files\RustDesk\RustDesk.exe", mock.ANY
+        )
 
     @mock.patch("platform.system", return_value="Windows")
     @mock.patch("subprocess.run")
     def test_ensure_rustdesk_installs_silently_with_offline_installer(self, mock_subproc, mock_system):
         mock_subproc.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
         app = mock.MagicMock(spec=main.NeoPOSInstaller)
-        app.find_rustdesk_installed.return_value = None
+        app.find_rustdesk_installed.side_effect = [None, r"C:\Program Files\RustDesk\RustDesk.exe"]
+        app.configure_rustdesk_unattended = mock.MagicMock()
 
         fake_offline = os.path.join(self.temp_dir, "rustdesk.exe")
         with open(fake_offline, "w") as f:
@@ -84,6 +89,25 @@ class TestRustDeskIntegration(unittest.TestCase):
                 mock_subproc.assert_called_once()
                 args, kwargs = mock_subproc.call_args
                 self.assertIn("--silent-install", args[0])
+                app.configure_rustdesk_unattended.assert_called_once_with(
+                    r"C:\Program Files\RustDesk\RustDesk.exe", mock.ANY
+                )
+
+    @mock.patch("subprocess.run")
+    def test_configure_rustdesk_unattended_sets_master_password_and_options(self, mock_subproc):
+        mock_subproc.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+        app = mock.MagicMock(spec=main.NeoPOSInstaller)
+        fake_exe = os.path.join(self.temp_dir, "RustDesk.exe")
+        with open(fake_exe, "w") as f:
+            f.write("mock")
+
+        main.NeoPOSInstaller.configure_rustdesk_unattended(app, fake_exe)
+        self.assertEqual(mock_subproc.call_count, 3)
+
+        calls = [c[0][0] for c in mock_subproc.call_args_list]
+        self.assertEqual(calls[0], [fake_exe, "--password", main.RUSTDESK_PERMANENT_PASSWORD])
+        self.assertEqual(calls[1], [fake_exe, "--option", "approve-mode", "password"])
+        self.assertEqual(calls[2], [fake_exe, "--option", "verification-method", "use-both-passwords"])
 
     @mock.patch("platform.system", return_value="Windows")
     def test_ensure_rustdesk_error_does_not_raise(self, mock_system):

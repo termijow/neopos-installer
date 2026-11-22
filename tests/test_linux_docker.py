@@ -53,7 +53,7 @@ def installer_without_ui():
 
 class LinuxDockerTests(unittest.TestCase):
     @mock.patch.object(installer_main.platform, "system", return_value="Linux")
-    @mock.patch.object(installer_main.os, "geteuid", return_value=1000)
+    @mock.patch.object(installer_main.os, "geteuid", return_value=1000, create=True)
     @mock.patch.object(installer_main.shutil, "which", return_value="/usr/bin/sudo")
     def test_admin_password_is_validated_through_stdin(self, _which, _geteuid, _system):
         installer = installer_without_ui()
@@ -71,7 +71,7 @@ class LinuxDockerTests(unittest.TestCase):
 
     @mock.patch.object(installer_main.time, "sleep", return_value=None)
     @mock.patch.object(installer_main.platform, "system", return_value="Linux")
-    @mock.patch.object(installer_main.os, "geteuid", return_value=1000)
+    @mock.patch.object(installer_main.os, "geteuid", return_value=1000, create=True)
     def test_linux_starts_engine_and_uses_sudo_for_inaccessible_socket(
         self, _geteuid, _system, _sleep
     ):
@@ -102,7 +102,7 @@ class LinuxDockerTests(unittest.TestCase):
         self.assertFalse(any("Docker Desktop" in line for line in installer.logs))
 
     @mock.patch.object(installer_main.platform, "system", return_value="Linux")
-    @mock.patch.object(installer_main.os, "geteuid", return_value=1000)
+    @mock.patch.object(installer_main.os, "geteuid", return_value=1000, create=True)
     @mock.patch.object(installer_main.shutil, "which", return_value="/usr/bin/sudo")
     def test_cancelled_admin_prompt_stops_immediately(self, _which, _geteuid, _system):
         installer = installer_without_ui()
