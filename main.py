@@ -893,6 +893,17 @@ class NeoPOSInstaller(ctk.CTk):
                     os.chmod(credentials_path, 0o600)
                 except OSError:
                     pass
+                if platform.system() == "Windows":
+                    try:
+                        username = os.environ.get("USERNAME", "").strip()
+                        if username:
+                            subprocess.run(
+                                ["icacls", credentials_path, "/inheritance:r", "/grant:r", f"{username}:(R,W)"],
+                                capture_output=True,
+                                timeout=10,
+                            )
+                    except Exception:
+                        pass
                 if index > 0 or self.credentials_path is None:
                     self.credentials_path = credentials_path
                 self.append_log(f"[+] Archivo de credenciales creado en: {credentials_path}")
@@ -2262,6 +2273,8 @@ WantedBy=multi-user.target
                 )
                 if os.path.exists(temporary_release):
                     os.remove(temporary_release)
+                if not NEOPOS_LOCAL_RELEASE_URL.startswith("https://"):
+                    raise RuntimeError("URL de descarga insegura: solo se permite HTTPS.")
                 try:
                     urllib.request.urlretrieve(NEOPOS_LOCAL_RELEASE_URL, temporary_release)
                 except Exception as error:
@@ -2269,6 +2282,12 @@ WantedBy=multi-user.target
                         "No se pudo obtener la build de producción de NeoPOS. "
                         f"URL: {NEOPOS_LOCAL_RELEASE_URL}. Motivo: {error}"
                     ) from error
+                expected_sha = os.environ.get("NEOPOS_LOCAL_SHA256", "").strip().lower()
+                if expected_sha:
+                    actual_sha = hashlib.sha256(open(temporary_release, "rb").read()).hexdigest().lower()
+                    if actual_sha != expected_sha:
+                        os.remove(temporary_release)
+                        raise RuntimeError(f"Checksum SHA-256 inválido para la descarga (esperado {expected_sha}, obtenido {actual_sha}).")
                 release_path = temporary_release
 
             self.validate_release_file(release_path)
